@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="jni">
+      <UniqueIdentifier>8f8b2780-4a15-4622-9dbe-db71ac201852</UniqueIdentifier>
+    </Filter>
+    <Filter Include="res">
+      <UniqueIdentifier>4701e0e2-b34b-4768-81db-8dc92e21196d</UniqueIdentifier>
+    </Filter>
+    <Filter Include="res\values">
+      <UniqueIdentifier>8fafd3c5-3f7a-4548-a170-22a0b1a5dc3f</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HelloVulkan">
+      <UniqueIdentifier>{9618ec09-eeca-497a-9b42-871238457d7b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HelloVulkan\native_app_glue">
+      <UniqueIdentifier>{ab7a4956-b5c7-45c7-871d-732349a74089}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <AndroidBuild Include="AndroidManifest.xml" />
+    <AndroidBuild Include="res\values\strings.xml">
+      <Filter>res\values</Filter>
+    </AndroidBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="jni\main.cpp">
+      <Filter>jni</Filter>
+    </ClCompile>
+    <ClCompile Include="native_app_glue\android_native_app_glue.c">
+      <Filter>HelloVulkan\native_app_glue</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="native_app_glue\android_native_app_glue.h">
+      <Filter>HelloVulkan\native_app_glue</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
