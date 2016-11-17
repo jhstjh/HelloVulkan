@@ -47,5 +47,7 @@ VK_IMPORT(vkCmdBindVertexBuffers);
 VK_IMPORT(vkCmdCopyBuffer);
 VK_IMPORT(vkQueueWaitIdle);
 VK_IMPORT(vkFreeCommandBuffers);
+VK_IMPORT(vkCmdBindIndexBuffer);
+VK_IMPORT(vkCmdDrawIndexed);
 
 #undef VK_IMPORT

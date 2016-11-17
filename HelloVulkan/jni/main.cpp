@@ -75,8 +75,8 @@ VkCommandPool       gCmdPool;
 std::vector<VkCommandBuffer>    gCmdBuffer;
 VkBuffer            gVertexBuffer;
 VkDeviceMemory      gVertexBufferMemory;
-VkBuffer            gStagingBuffer;
-VkDeviceMemory      gStagingBufferMemory;
+VkBuffer            gIndexBuffer;
+VkDeviceMemory      gIndexBufferMemory;
 uint32_t            gCmdBufferLen;
 VkSemaphore         gimageAvailableSemaphore;
 VkSemaphore         grenderFinishedSemaphore;
@@ -121,9 +121,14 @@ struct Vertex
 };
 
 const std::vector<Vertex> vertices = {
-    { { 0.0f, -0.5f },{ 1.0f, 0.0f, 0.0f } },
-    { { 0.5f, 0.5f },{ 0.0f, 1.0f, 0.0f } },
-    { { -0.5f, 0.5f },{ 0.0f, 0.0f, 1.0f } }
+    { { -0.5f, -0.5f },{ 1.0f, 0.0f, 0.0f } },
+    { { 0.5f, -0.5f },{ 0.0f, 1.0f, 0.0f } },
+    { { 0.5f, 0.5f },{ 0.0f, 0.0f, 1.0f } },
+    { { -0.5f, 0.5f },{ 1.0f, 1.0f, 1.0f } }
+};
+
+const std::vector<uint16_t> indices = {
+    0, 1, 2, 2, 3, 0
 };
 
 /**
@@ -720,7 +725,7 @@ static int engine_init_display(struct engine* engine) {
     result = vkCreateCommandPool(gDevice, &cmdPoolCreateInfo, nullptr, &gCmdPool);
     assert(result == VK_SUCCESS);
 
-    // create vertex buffer
+    // create buffer lambda
     auto createBuffer = [](VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
     {
         VkBufferCreateInfo bufferInfo = {};
@@ -758,52 +763,111 @@ static int engine_init_display(struct engine* engine) {
         vkBindBufferMemory(gDevice, buffer, bufferMemory, 0);
     };
 
-    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+    // create vertex buffer
+    {
+        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
-    // staging buffer
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, gStagingBuffer, gStagingBufferMemory);
+        // staging buffer
+        VkBuffer            stagingBuffer;
+        VkDeviceMemory      stagingBufferMemory;
 
-    void* data;
-    vkMapMemory(gDevice, gStagingBufferMemory, 0, bufferSize, 0, &data);
-    assert(data);
-    memcpy(data, vertices.data(), (size_t)bufferSize);
-    vkUnmapMemory(gDevice, gStagingBufferMemory);
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
-    // device local buffer
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gVertexBuffer, gVertexBufferMemory);
+        void* data;
+        vkMapMemory(gDevice, stagingBufferMemory, 0, bufferSize, 0, &data);
+        assert(data);
+        memcpy(data, vertices.data(), (size_t)bufferSize);
+        vkUnmapMemory(gDevice, stagingBufferMemory);
 
-    // copy vertex buffer from host visible to device local
-    VkCommandBufferAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = gCmdPool;
-    allocInfo.commandBufferCount = 1;
+        // device local buffer
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gVertexBuffer, gVertexBufferMemory);
 
-    VkCommandBuffer copyCommandBuffer;
-    result = vkAllocateCommandBuffers(gDevice, &allocInfo, &copyCommandBuffer);
-    assert(result == VK_SUCCESS);
+        // copy vertex buffer from host visible to device local
+        VkCommandBufferAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = gCmdPool;
+        allocInfo.commandBufferCount = 1;
 
-    VkCommandBufferBeginInfo beginInfo = {};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        VkCommandBuffer copyCommandBuffer;
+        result = vkAllocateCommandBuffers(gDevice, &allocInfo, &copyCommandBuffer);
+        assert(result == VK_SUCCESS);
 
-    vkBeginCommandBuffer(copyCommandBuffer, &beginInfo);
-    VkBufferCopy copyRegion = {};
-    copyRegion.srcOffset = 0; // Optional
-    copyRegion.dstOffset = 0; // Optional
-    copyRegion.size = size;
-    vkCmdCopyBuffer(copyCommandBuffer, gStagingBuffer, gVertexBuffer, 1, &copyRegion);
+        VkCommandBufferBeginInfo beginInfo = {};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    vkEndCommandBuffer(copyCommandBuffer);
+        vkBeginCommandBuffer(copyCommandBuffer, &beginInfo);
+        VkBufferCopy copyRegion = {};
+        copyRegion.srcOffset = 0; // Optional
+        copyRegion.dstOffset = 0; // Optional
+        copyRegion.size = size;
+        vkCmdCopyBuffer(copyCommandBuffer, stagingBuffer, gVertexBuffer, 1, &copyRegion);
 
-    VkSubmitInfo submitInfo = {};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &copyCommandBuffer;
+        vkEndCommandBuffer(copyCommandBuffer);
 
-    vkQueueSubmit(gQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(gQueue);
-    vkFreeCommandBuffers(gDevice, gCmdPool, 1, &copyCommandBuffer);
+        VkSubmitInfo submitInfo = {};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &copyCommandBuffer;
+
+        vkQueueSubmit(gQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(gQueue);
+        vkFreeCommandBuffers(gDevice, gCmdPool, 1, &copyCommandBuffer);
+    }
+
+    {
+        // create index buffer
+        VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+        // staging buffer
+        VkBuffer            stagingBuffer;
+        VkDeviceMemory      stagingBufferMemory;
+
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(gDevice, stagingBufferMemory, 0, bufferSize, 0, &data);
+        assert(data);
+        memcpy(data, indices.data(), (size_t)bufferSize);
+        vkUnmapMemory(gDevice, stagingBufferMemory);
+
+        // device local buffer
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gIndexBuffer, gIndexBufferMemory);
+
+        // copy vertex buffer from host visible to device local
+        VkCommandBufferAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = gCmdPool;
+        allocInfo.commandBufferCount = 1;
+
+        VkCommandBuffer copyCommandBuffer;
+        result = vkAllocateCommandBuffers(gDevice, &allocInfo, &copyCommandBuffer);
+        assert(result == VK_SUCCESS);
+
+        VkCommandBufferBeginInfo beginInfo = {};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        vkBeginCommandBuffer(copyCommandBuffer, &beginInfo);
+        VkBufferCopy copyRegion = {};
+        copyRegion.srcOffset = 0; // Optional
+        copyRegion.dstOffset = 0; // Optional
+        copyRegion.size = size;
+        vkCmdCopyBuffer(copyCommandBuffer, stagingBuffer, gIndexBuffer, 1, &copyRegion);
+
+        vkEndCommandBuffer(copyCommandBuffer);
+
+        VkSubmitInfo submitInfo = {};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &copyCommandBuffer;
+
+        vkQueueSubmit(gQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(gQueue);
+        vkFreeCommandBuffers(gDevice, gCmdPool, 1, &copyCommandBuffer);
+    }
 
     // create command buffer
     gCmdBufferLen = gSwapchainLength;
@@ -856,8 +920,9 @@ static int engine_init_display(struct engine* engine) {
         VkBuffer vertexBuffers[] = { gVertexBuffer };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(gCmdBuffer[bufferIndex], 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(gCmdBuffer[bufferIndex], gIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-        vkCmdDraw(gCmdBuffer[bufferIndex], vertices.size(), 1, 0, 0);
+        vkCmdDrawIndexed(gCmdBuffer[bufferIndex], indices.size(), 1, 0, 0, 0);
 
         vkCmdEndRenderPass(gCmdBuffer[bufferIndex]);
         result = vkEndCommandBuffer(gCmdBuffer[bufferIndex]);
