@@ -36,5 +36,13 @@ VK_IMPORT(vkQueuePresentKHR);
 VK_IMPORT(vkDestroySurfaceKHR);
 VK_IMPORT(vkDestroyDevice);
 VK_IMPORT(vkDestroyInstance);
+VK_IMPORT(vkCreateBuffer);
+VK_IMPORT(vkGetBufferMemoryRequirements);
+VK_IMPORT(vkGetPhysicalDeviceMemoryProperties);
+VK_IMPORT(vkAllocateMemory);
+VK_IMPORT(vkBindBufferMemory);
+VK_IMPORT(vkMapMemory);
+VK_IMPORT(vkUnmapMemory);
+VK_IMPORT(vkCmdBindVertexBuffers);
 
 #undef VK_IMPORT

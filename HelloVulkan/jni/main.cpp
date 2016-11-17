@@ -30,11 +30,17 @@
 #include <assert.h>
 #include <vector>
 #include <cstdint>
+#include <array>
 
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
 
 #include "VKFuncs.h"
+
+#include "mathfu/vector_2.h"
+#include "mathfu/vector_3.h"
+
+using namespace mathfu;
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "native-activity", __VA_ARGS__))
 #define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "native-activity", __VA_ARGS__))
@@ -67,6 +73,8 @@ std::vector<VkImageView>        gDisplayViews;
 VkRenderPass        gRenderPass;
 VkCommandPool       gCmdPool;
 std::vector<VkCommandBuffer>    gCmdBuffer;
+VkBuffer            gVertexBuffer;
+VkDeviceMemory      gVertexBufferMemory;
 uint32_t            gCmdBufferLen;
 VkSemaphore         gimageAvailableSemaphore;
 VkSemaphore         grenderFinishedSemaphore;
@@ -77,6 +85,44 @@ VkPipeline        gPipeline;
 
 bool init = false;
 
+using vec2 = Vector<float, 2>;
+using vec3 = Vector<float, 3>;
+
+struct Vertex
+{
+    vec2 pos;
+    vec3 color;
+
+    static VkVertexInputBindingDescription getBindingDescription() {
+        VkVertexInputBindingDescription bindingDescription = {};
+        bindingDescription.binding = 0;
+        bindingDescription.stride = sizeof(Vertex);
+        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        return bindingDescription;
+    }
+
+    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
+        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions = {};
+        attributeDescriptions[0].binding = 0;
+        attributeDescriptions[0].location = 0;
+        attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[0].offset = offsetof(Vertex, pos);
+
+        attributeDescriptions[1].binding = 0;
+        attributeDescriptions[1].location = 1;
+        attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+        return attributeDescriptions;
+    }
+};
+
+const std::vector<Vertex> vertices = {
+    { { 0.0f, -0.5f },{ 1.0f, 0.0f, 0.0f } },
+    { { 0.5f, 0.5f },{ 0.0f, 1.0f, 0.0f } },
+    { { -0.5f, 0.5f },{ 0.0f, 0.0f, 1.0f } }
+};
 
 /**
  * Our saved state data.
@@ -387,6 +433,14 @@ static int engine_init_display(struct engine* engine) {
     subpassDescription.preserveAttachmentCount = 0;
     subpassDescription.pPreserveAttachments = nullptr;
 
+    VkSubpassDependency dependency = {};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
     VkRenderPassCreateInfo renderPassCreateInfo;
     renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassCreateInfo.pNext = nullptr;
@@ -394,8 +448,8 @@ static int engine_init_display(struct engine* engine) {
     renderPassCreateInfo.pAttachments = &attachmentDescriptions;
     renderPassCreateInfo.subpassCount = 1;
     renderPassCreateInfo.pSubpasses = &subpassDescription;
-    renderPassCreateInfo.dependencyCount = 0;
-    renderPassCreateInfo.pDependencies = nullptr;
+    renderPassCreateInfo.dependencyCount = 1;
+    renderPassCreateInfo.pDependencies = &dependency;
 
     result = vkCreateRenderPass(gDevice, &renderPassCreateInfo,
         nullptr, &gRenderPass);
@@ -609,21 +663,16 @@ static int engine_init_display(struct engine* engine) {
     vertexInputAttributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
     vertexInputAttributes[0].offset = 0;
 
-    // VkPipelineVertexInputStateCreateInfo vertexInputInfo;
-    // vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    // vertexInputInfo.pNext = nullptr;
-    // vertexInputInfo.vertexBindingDescriptionCount = 1;
-    // vertexInputInfo.pVertexBindingDescriptions = &vertexInputBindings;
-    // vertexInputInfo.vertexAttributeDescriptionCount = 1;
-    // vertexInputInfo.pVertexAttributeDescriptions = vertexInputAttributes;
+    auto bindingDescription = Vertex::getBindingDescription();
+    auto attributeDescriptions = Vertex::getAttributeDescriptions();
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo;
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputInfo.pNext = nullptr;
-    vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.pVertexBindingDescriptions = nullptr;
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
-    vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = attributeDescriptions.size();
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
     VkPipelineCacheCreateInfo pipelineCacheInfo;
     pipelineCacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
@@ -669,6 +718,49 @@ static int engine_init_display(struct engine* engine) {
     result = vkCreateCommandPool(gDevice, &cmdPoolCreateInfo, nullptr, &gCmdPool);
     assert(result == VK_SUCCESS);
 
+    // create vertex buffer
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = sizeof(vertices[0]) * vertices.size();
+    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    result = vkCreateBuffer(gDevice, &bufferInfo, nullptr, &gVertexBuffer);
+    assert(result == VK_SUCCESS);
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(gDevice, gVertexBuffer, &memRequirements);
+
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(gPhysicalDevice, &memProperties);
+
+    uint32_t memoryTypeIndex;
+    uint32_t properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    for (memoryTypeIndex = 0; memoryTypeIndex < memProperties.memoryTypeCount; memoryTypeIndex++) {
+        if ((memRequirements.memoryTypeBits & (1 << memoryTypeIndex)) && (memProperties.memoryTypes[memoryTypeIndex].propertyFlags & properties) == properties)
+        {
+            break;
+        }
+    }
+    assert(memoryTypeIndex != memProperties.memoryTypeCount);
+
+    VkMemoryAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = memoryTypeIndex;
+
+    result = vkAllocateMemory(gDevice, &allocInfo, nullptr, &gVertexBufferMemory);
+    assert(result == VK_SUCCESS);
+
+    vkBindBufferMemory(gDevice, gVertexBuffer, gVertexBufferMemory, 0);
+
+    void* data;
+    vkMapMemory(gDevice, gVertexBufferMemory, 0, bufferInfo.size, 0, &data);
+    assert(data);
+    memcpy(data, vertices.data(), (size_t)bufferInfo.size);
+    vkUnmapMemory(gDevice, gVertexBufferMemory);
+
+    // create command buffer
     gCmdBufferLen = gSwapchainLength;
     gCmdBuffer.resize(gSwapchainLength);
 
@@ -716,7 +808,11 @@ static int engine_init_display(struct engine* engine) {
         vkCmdBindPipeline(gCmdBuffer[bufferIndex], VK_PIPELINE_BIND_POINT_GRAPHICS,
             gPipeline);
 
-        vkCmdDraw(gCmdBuffer[bufferIndex], 3, 1, 0, 0);
+        VkBuffer vertexBuffers[] = { gVertexBuffer };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(gCmdBuffer[bufferIndex], 0, 1, vertexBuffers, offsets);
+
+        vkCmdDraw(gCmdBuffer[bufferIndex], vertices.size(), 1, 0, 0);
 
         vkCmdEndRenderPass(gCmdBuffer[bufferIndex]);
         result = vkEndCommandBuffer(gCmdBuffer[bufferIndex]);

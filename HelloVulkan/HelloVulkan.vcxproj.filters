@@ -16,6 +16,12 @@
     <Filter Include="HelloVulkan\native_app_glue">
       <UniqueIdentifier>{ab7a4956-b5c7-45c7-871d-732349a74089}</UniqueIdentifier>
     </Filter>
+    <Filter Include="shaders">
+      <UniqueIdentifier>{126221f4-0947-43ca-9566-932102e238fd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="jni\mathfu">
+      <UniqueIdentifier>{ced9d065-134f-478c-ae68-198435cdbf16}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <AndroidBuild Include="AndroidManifest.xml" />
@@ -44,5 +50,43 @@
     <ClInclude Include="jni\VKFuncs.h">
       <Filter>jni</Filter>
     </ClInclude>
+    <ClInclude Include="jni\mathfu\quaternion.h">
+      <Filter>jni\mathfu</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\mathfu\utilities.h">
+      <Filter>jni\mathfu</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\mathfu\vector.h">
+      <Filter>jni\mathfu</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\mathfu\vector_2.h">
+      <Filter>jni\mathfu</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\mathfu\vector_3.h">
+      <Filter>jni\mathfu</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\mathfu\vector_4.h">
+      <Filter>jni\mathfu</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\mathfu\constants.h">
+      <Filter>jni\mathfu</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\mathfu\glsl_mappings.h">
+      <Filter>jni\mathfu</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\mathfu\matrix.h">
+      <Filter>jni\mathfu</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\mathfu\matrix_4x4.h">
+      <Filter>jni\mathfu</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="assets\shader.frag">
+      <Filter>shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="assets\shader.vert">
+      <Filter>shaders</Filter>
+    </CustomBuild>
   </ItemGroup>
 </Project>
