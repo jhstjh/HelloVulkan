@@ -91,9 +91,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="jni\main.cpp" />
+    <ClCompile Include="jni\VKFuncs.cpp" />
     <ClCompile Include="native_app_glue\android_native_app_glue.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="jni\VKFuncs.h" />
+    <ClInclude Include="jni\VKImport.h" />
     <ClInclude Include="native_app_glue\android_native_app_glue.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -4,18 +4,9 @@
 *.opensdf
 *.suo
 *.bak
-HelloVulkan/Tegra-Android/*
 
-/HelloVulkan/Tegra-Android/Debug/HelloVulkan.log
-/HelloVulkan/Tegra-Android/Debug/HelloVulkan.tlog/aarch64-linux-android-g++.read.1.tlog
-/HelloVulkan/Tegra-Android/Debug/HelloVulkan.tlog/aarch64-linux-android-g++.write.1.tlog
-/HelloVulkan/Tegra-Android/Debug/ant_log.xml
-/HelloVulkan/Tegra-Android/Debug/bin/HelloVulkan-debug-unaligned.apk
-/HelloVulkan/Tegra-Android/Debug/bin/HelloVulkan-debug.apk
-/HelloVulkan/Tegra-Android/Debug/bin/HelloVulkan.ap_
-/HelloVulkan/Tegra-Android/Debug/bin/build.prop
-/HelloVulkan/Tegra-Android/Debug/libs/arm64-v8a/libHelloVulkan.so
-/HelloVulkan/Tegra-Android/Debug/main.o
+/HelloVulkan/Tegra-Android/*
+
 /Tegra-Android/Debug/HelloVulkan.apk
 /Tegra-Android/Debug/libHelloVulkan.so
 /Tegra-Android/Debug/stripped_libHelloVulkan.so

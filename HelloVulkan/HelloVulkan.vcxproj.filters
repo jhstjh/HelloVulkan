@@ -30,10 +30,19 @@
     <ClCompile Include="native_app_glue\android_native_app_glue.c">
       <Filter>HelloVulkan\native_app_glue</Filter>
     </ClCompile>
+    <ClCompile Include="jni\VKFuncs.cpp">
+      <Filter>jni</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="native_app_glue\android_native_app_glue.h">
       <Filter>HelloVulkan\native_app_glue</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\VKImport.h">
+      <Filter>jni</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\VKFuncs.h">
+      <Filter>jni</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

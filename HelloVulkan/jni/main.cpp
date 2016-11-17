@@ -26,7 +26,6 @@
 #include <android/log.h>
 #include "../native_app_glue/android_native_app_glue.h"
 
-#include "nosdk/vulkan/vulkan.h"
 #include <dlfcn.h>
 #include <assert.h>
 #include <vector>
@@ -35,6 +34,7 @@
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
 
+#include "VKFuncs.h"
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "native-activity", __VA_ARGS__))
 #define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "native-activity", __VA_ARGS__))
@@ -77,9 +77,6 @@ VkPipeline        gPipeline;
 
 bool init = false;
 
-void* NvAndroidGetVKProcAddr(const char* name) {
-    return (void*)android_getVkProc(getVkProcInstance, name);
-}
 
 /**
  * Our saved state data.
@@ -118,47 +115,12 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugReportFlagsEXT flags,
  * Initialize an EGL context for the current display.
  */
 static int engine_init_display(struct engine* engine) {
-    VkFormat m_cbFormat = VK_FORMAT_UNDEFINED;
-    VkFormat m_dsFormat = VK_FORMAT_UNDEFINED;
+    loadVKLibs();
+    loadVKFuncs();
 
     VkResult result = VK_ERROR_INITIALIZATION_FAILED;
 
-
-    PFN_vkGetProcAddressNV driver_getProc = NULL;
-
-    vulkan_so = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
-    assert(vulkan_so);
-
-    // load so for validation layers
-    auto so0 = dlopen("libVkLayer_core_validation.so", RTLD_NOW | RTLD_LOCAL);
-    auto so1 = dlopen("libVkLayer_image.so", RTLD_NOW | RTLD_LOCAL);
-    auto so2 = dlopen("libVkLayer_object_tracker.so", RTLD_NOW | RTLD_LOCAL);
-    auto so3 = dlopen("libVkLayer_parameter_validation.so", RTLD_NOW | RTLD_LOCAL);
-    auto so4 = dlopen("libVkLayer_swapchain.so", RTLD_NOW | RTLD_LOCAL);
-    auto so5 = dlopen("libVkLayer_threading.so", RTLD_NOW | RTLD_LOCAL);
-    auto so6 = dlopen("libVkLayer_unique_objects.so", RTLD_NOW | RTLD_LOCAL);
-
-    android_getVkProc = (PFN_vkGetInstanceProcAddr)dlsym(vulkan_so, "vkGetInstanceProcAddr");
-    assert(android_getVkProc);
-
-    driver_getProc = (PFN_vkGetProcAddressNV)NvAndroidGetVKProcAddr;
-
-
     // Init instance
-    PFN_vkEnumerateInstanceExtensionProperties
-        vkEnumerateInstanceExtensionProperties =
-        reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
-            dlsym(vulkan_so, "vkEnumerateInstanceExtensionProperties"));
-    PFN_vkEnumerateInstanceLayerProperties vkEnumerateInstanceLayerProperties =
-        reinterpret_cast<PFN_vkEnumerateInstanceLayerProperties>(
-            dlsym(vulkan_so, "vkEnumerateInstanceLayerProperties"));
-    PFN_vkCreateInstance vkCreateInstance =
-        reinterpret_cast<PFN_vkCreateInstance>(
-            dlsym(vulkan_so, "vkCreateInstance"));
-    PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr =
-        reinterpret_cast<PFN_vkGetInstanceProcAddr>(
-            dlsym(vulkan_so, "vkGetInstanceProcAddr"));
-
     VkApplicationInfo applicationInfo = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
     applicationInfo.pApplicationName = "JS";
     applicationInfo.applicationVersion = 1;
@@ -232,10 +194,6 @@ static int engine_init_display(struct engine* engine) {
     getVkProcInstance = _instance;
 
     // Init device
-    PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices =
-        reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
-            dlsym(vulkan_so, "vkEnumeratePhysicalDevices"));
-
     uint32_t gpuCount = 0;
     result = vkEnumeratePhysicalDevices(getVkProcInstance, &gpuCount, nullptr);
     assert(result == VK_SUCCESS);
@@ -256,21 +214,13 @@ static int engine_init_display(struct engine* engine) {
 
     PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT =
         reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(
-            dlsym(so0, "vkCreateDebugReportCallbackEXT"));
+            loadFuncFromValidationLib("vkCreateDebugReportCallbackEXT"));
 
     VkDebugReportCallbackEXT debugReportCallback;
     result = vkCreateDebugReportCallbackEXT(getVkProcInstance, &debugReportCallbackCreateInfo, nullptr, &debugReportCallback);
     assert(result == VK_SUCCESS);
 
     // physical device layers and extensions
-    PFN_vkEnumerateDeviceLayerProperties vkEnumerateDeviceLayerProperties =
-        reinterpret_cast<PFN_vkEnumerateDeviceLayerProperties>(
-            dlsym(vulkan_so, "vkEnumerateDeviceLayerProperties"));
-
-    PFN_vkEnumerateDeviceExtensionProperties vkEnumerateDeviceExtensionProperties =
-        reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(
-            dlsym(vulkan_so, "vkEnumerateDeviceExtensionProperties"));
-
     result = vkEnumerateDeviceLayerProperties(gPhysicalDevice, &count, NULL);
     assert(result == VK_SUCCESS);
 
@@ -303,10 +253,6 @@ static int engine_init_display(struct engine* engine) {
     VkAndroidSurfaceCreateInfoKHR createInfo = { VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR };
     createInfo.window = engine->app->window;
 
-    PFN_vkCreateAndroidSurfaceKHR vkCreateAndroidSurfaceKHR =
-        reinterpret_cast<PFN_vkCreateAndroidSurfaceKHR>(
-            dlsym(vulkan_so, "vkCreateAndroidSurfaceKHR"));
-
     result = vkCreateAndroidSurfaceKHR(getVkProcInstance, &createInfo, nullptr, &gSurface);
     assert(result == VK_SUCCESS);
 
@@ -330,14 +276,6 @@ static int engine_init_display(struct engine* engine) {
     uint32_t presentFamilyIdx = 0;
 
     uint32_t queueFamilyCount = 0;
-
-    PFN_vkGetPhysicalDeviceQueueFamilyProperties vkGetPhysicalDeviceQueueFamilyProperties =
-        reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(
-            dlsym(vulkan_so, "vkGetPhysicalDeviceQueueFamilyProperties"));
-
-    PFN_vkGetPhysicalDeviceSurfaceSupportKHR vkGetPhysicalDeviceSurfaceSupportKHR =
-        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceSupportKHR>(
-            dlsym(vulkan_so, "vkGetPhysicalDeviceSurfaceSupportKHR"));
 
     vkGetPhysicalDeviceQueueFamilyProperties(gPhysicalDevice, &queueFamilyCount, nullptr);
 
@@ -364,32 +302,16 @@ static int engine_init_display(struct engine* engine) {
     uint32_t queueFamilyIndices[] = { graphicsFamilyIdx, presentFamilyIdx };
 
     // create device
-    PFN_vkCreateDevice vkCreateDevice =
-        reinterpret_cast<PFN_vkCreateDevice>(
-            dlsym(vulkan_so, "vkCreateDevice"));
-
     result = vkCreateDevice(gPhysicalDevice, &deviceCreateInfo, nullptr, &gDevice);
     assert(result == VK_SUCCESS);
-
-    PFN_vkGetDeviceQueue vkGetDeviceQueue =
-        reinterpret_cast<PFN_vkGetDeviceQueue>(
-            dlsym(vulkan_so, "vkGetDeviceQueue"));
 
     vkGetDeviceQueue(gDevice, 0, 0, &gQueue);
 
     // create swap chain
-    PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR vkGetPhysicalDeviceSurfaceCapabilitiesKHR =
-        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR>(
-            dlsym(vulkan_so, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR"));
-
     VkSurfaceCapabilitiesKHR surfaceCapabilities;
     result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gPhysicalDevice, gSurface,
         &surfaceCapabilities);
     assert(result == VK_SUCCESS);
-
-    PFN_vkGetPhysicalDeviceSurfaceFormatsKHR vkGetPhysicalDeviceSurfaceFormatsKHR =
-        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceFormatsKHR>(
-            dlsym(vulkan_so, "vkGetPhysicalDeviceSurfaceFormatsKHR"));
 
     uint32_t formatCount = 0;
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(gPhysicalDevice, gSurface, &formatCount, nullptr);
@@ -430,23 +352,14 @@ static int engine_init_display(struct engine* engine) {
     swapchainCreateInfo.clipped = VK_FALSE;
     swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
 
-    PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR =
-        reinterpret_cast<PFN_vkCreateSwapchainKHR>(
-            dlsym(vulkan_so, "vkCreateSwapchainKHR"));
-
     result = vkCreateSwapchainKHR(gDevice, &swapchainCreateInfo,
         nullptr, &gSwapchain);
     assert(result == VK_SUCCESS);
 
-    PFN_vkGetSwapchainImagesKHR vkGetSwapchainImagesKHR =
-        reinterpret_cast<PFN_vkGetSwapchainImagesKHR>(
-            dlsym(vulkan_so, "vkGetSwapchainImagesKHR"));
-
     result = vkGetSwapchainImagesKHR(gDevice, gSwapchain,
         &gSwapchainLength, nullptr);
     assert(result == VK_SUCCESS);
-
-
+    
     // create render pass
     VkAttachmentDescription attachmentDescriptions;
     attachmentDescriptions.format = gDisplayFormat;
@@ -484,14 +397,9 @@ static int engine_init_display(struct engine* engine) {
     renderPassCreateInfo.dependencyCount = 0;
     renderPassCreateInfo.pDependencies = nullptr;
 
-    PFN_vkCreateRenderPass vkCreateRenderPass =
-        reinterpret_cast<PFN_vkCreateRenderPass>(
-            dlsym(vulkan_so, "vkCreateRenderPass"));
-
     result = vkCreateRenderPass(gDevice, &renderPassCreateInfo,
         nullptr, &gRenderPass);
     assert(result == VK_SUCCESS);
-
 
     // create framebuffer
     uint32_t SwapchainImagesCount = 0;
@@ -501,10 +409,6 @@ static int engine_init_display(struct engine* engine) {
     std::vector<VkImage> displayImages(SwapchainImagesCount);
     result = vkGetSwapchainImagesKHR(gDevice, gSwapchain, &SwapchainImagesCount, displayImages.data());
     assert(result == VK_SUCCESS);
-
-    PFN_vkCreateImageView vkCreateImageView =
-        reinterpret_cast<PFN_vkCreateImageView>(
-            dlsym(vulkan_so, "vkCreateImageView"));
 
     gDisplayViews.resize(SwapchainImagesCount);
     for (uint32_t i = 0; i < SwapchainImagesCount; i++)
@@ -532,10 +436,6 @@ static int engine_init_display(struct engine* engine) {
 
     // no depth buffer for now
     VkImageView depthView = VK_NULL_HANDLE;
-
-    PFN_vkCreateFramebuffer vkCreateFramebuffer =
-        reinterpret_cast<PFN_vkCreateFramebuffer>(
-            dlsym(vulkan_so, "vkCreateFramebuffer"));
 
     gFramebuffers.resize(gSwapchainLength);
     for (uint32_t i = 0; i < gSwapchainLength; i++)
@@ -570,10 +470,6 @@ static int engine_init_display(struct engine* engine) {
     pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
     pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
 
-    PFN_vkCreatePipelineLayout vkCreatePipelineLayout =
-        reinterpret_cast<PFN_vkCreatePipelineLayout>(
-            dlsym(vulkan_so, "vkCreatePipelineLayout"));
-
     result = vkCreatePipelineLayout(gDevice, &pipelineLayoutCreateInfo, nullptr, &gPLayout);
     assert(result == VK_SUCCESS);
 
@@ -598,30 +494,6 @@ static int engine_init_display(struct engine* engine) {
     AAsset_read(fs, fsData.data(), size);
     AAsset_close(fs);
 
-#if 0
-    static const char vs[] =
-        "#version 450 core\
-        layout(location = 0) in vec2 aVertex;\
-        \
-        \
-        void main()\
-        {\
-            gl_Position = vec4(aVertex, 0, 1);\
-        }"
-    ;
-
-    static const char fs[] =
-        "#version 450 core                       \
-        #extension GL_KHR_vulkan_glsl : enable   \
-        layout(location = 0) out vec4 oFrag;     \
-                                                 \
-        void main()                              \
-        {                                        \
-            oFrag = vColor;                      \
-        }"
-    ;
-#endif
-
     VkShaderModule vertexShader, fragmentShader;
 
     VkShaderModuleCreateInfo shaderModuleCreateInfo;
@@ -630,10 +502,6 @@ static int engine_init_display(struct engine* engine) {
     shaderModuleCreateInfo.codeSize = vsData.size();
     shaderModuleCreateInfo.pCode = (const uint32_t*)(vsData.data());
     shaderModuleCreateInfo.flags = 0;
-
-    PFN_vkCreateShaderModule vkCreateShaderModule =
-        reinterpret_cast<PFN_vkCreateShaderModule>(
-            dlsym(vulkan_so, "vkCreateShaderModule"));
 
     result = vkCreateShaderModule(
         gDevice, &shaderModuleCreateInfo, nullptr, &vertexShader);
@@ -764,11 +632,6 @@ static int engine_init_display(struct engine* engine) {
     pipelineCacheInfo.pInitialData = nullptr;
     pipelineCacheInfo.flags = 0;
 
-
-    PFN_vkCreatePipelineCache vkCreatePipelineCache =
-        reinterpret_cast<PFN_vkCreatePipelineCache>(
-            dlsym(vulkan_so, "vkCreatePipelineCache"));
-
     result = vkCreatePipelineCache(gDevice, &pipelineCacheInfo, nullptr, &gPCache);
     assert(result == VK_SUCCESS);
 
@@ -793,14 +656,8 @@ static int engine_init_display(struct engine* engine) {
     pipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineCreateInfo.basePipelineIndex = 0;
 
-    PFN_vkCreateGraphicsPipelines vkCreateGraphicsPipelines =
-        reinterpret_cast<PFN_vkCreateGraphicsPipelines>(
-            dlsym(vulkan_so, "vkCreateGraphicsPipelines"));
-
     result = vkCreateGraphicsPipelines(gDevice, gPCache, 1, &pipelineCreateInfo, nullptr, &gPipeline);
     assert(result == VK_SUCCESS);
-
-
 
     // create command pool
     VkCommandPoolCreateInfo cmdPoolCreateInfo;
@@ -809,40 +666,11 @@ static int engine_init_display(struct engine* engine) {
     cmdPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     cmdPoolCreateInfo.queueFamilyIndex = 0;
 
-    PFN_vkCreateCommandPool vkCreateCommandPool =
-        reinterpret_cast<PFN_vkCreateCommandPool>(
-            dlsym(vulkan_so, "vkCreateCommandPool"));
-
     result = vkCreateCommandPool(gDevice, &cmdPoolCreateInfo, nullptr, &gCmdPool);
     assert(result == VK_SUCCESS);
 
     gCmdBufferLen = gSwapchainLength;
     gCmdBuffer.resize(gSwapchainLength);
-
-
-    PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers =
-        reinterpret_cast<PFN_vkAllocateCommandBuffers>(
-            dlsym(vulkan_so, "vkAllocateCommandBuffers"));
-
-    PFN_vkBeginCommandBuffer vkBeginCommandBuffer =
-        reinterpret_cast<PFN_vkBeginCommandBuffer>(
-            dlsym(vulkan_so, "vkBeginCommandBuffer"));
-
-    PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass =
-        reinterpret_cast<PFN_vkCmdBeginRenderPass>(
-            dlsym(vulkan_so, "vkCmdBeginRenderPass"));
-
-    PFN_vkCmdEndRenderPass vkCmdEndRenderPass =
-        reinterpret_cast<PFN_vkCmdEndRenderPass>(
-            dlsym(vulkan_so, "vkCmdEndRenderPass"));
-
-    PFN_vkEndCommandBuffer vkEndCommandBuffer =
-        reinterpret_cast<PFN_vkEndCommandBuffer>(
-            dlsym(vulkan_so, "vkEndCommandBuffer"));
-
-    PFN_vkCmdBindPipeline vkCmdBindPipeline =
-        reinterpret_cast<PFN_vkCmdBindPipeline>(
-            dlsym(vulkan_so, "vkCmdBindPipeline"));
 
     for (uint32_t bufferIndex = 0; bufferIndex < gSwapchainLength; bufferIndex++)
     {
@@ -883,10 +711,6 @@ static int engine_init_display(struct engine* engine) {
         renderPassBeginInfo.clearValueCount = 1;
         renderPassBeginInfo.pClearValues = &clearVals;
 
-        PFN_vkCmdDraw vkCmdDraw =
-            reinterpret_cast<PFN_vkCmdDraw>(
-                dlsym(vulkan_so, "vkCmdDraw"));
-
         vkCmdBeginRenderPass(gCmdBuffer[bufferIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         vkCmdBindPipeline(gCmdBuffer[bufferIndex], VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -903,10 +727,6 @@ static int engine_init_display(struct engine* engine) {
     semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     semaphoreCreateInfo.pNext = nullptr;
     semaphoreCreateInfo.flags = 0;
-
-    PFN_vkCreateSemaphore vkCreateSemaphore =
-        reinterpret_cast<PFN_vkCreateSemaphore>(
-            dlsym(vulkan_so, "vkCreateSemaphore"));
 
     result = vkCreateSemaphore(gDevice, &semaphoreCreateInfo, nullptr, &gimageAvailableSemaphore);
     assert(result == VK_SUCCESS);
@@ -930,10 +750,6 @@ static void engine_draw_frame(struct engine* engine) {
 
     VkResult result;
 
-    PFN_vkAcquireNextImageKHR vkAcquireNextImageKHR =
-        reinterpret_cast<PFN_vkAcquireNextImageKHR>(
-            dlsym(vulkan_so, "vkAcquireNextImageKHR"));
-
     uint32_t nextIndex;
     result = vkAcquireNextImageKHR(gDevice, gSwapchain, 0xFFFFFFFFFFFFFFFFull, gimageAvailableSemaphore, VK_NULL_HANDLE, &nextIndex);
     assert(result == VK_SUCCESS);
@@ -951,10 +767,6 @@ static void engine_draw_frame(struct engine* engine) {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    PFN_vkQueueSubmit vkQueueSubmit =
-        reinterpret_cast<PFN_vkQueueSubmit>(
-            dlsym(vulkan_so, "vkQueueSubmit"));
-
     result = vkQueueSubmit(gQueue, 1, &submitInfo, VK_NULL_HANDLE);
     assert(result == VK_SUCCESS);
 
@@ -968,10 +780,6 @@ static void engine_draw_frame(struct engine* engine) {
     presentInfo.pWaitSemaphores = signalSemaphores;
     presentInfo.pResults = &result;
 
-    PFN_vkQueuePresentKHR vkQueuePresentKHR =
-        reinterpret_cast<PFN_vkQueuePresentKHR>(
-            dlsym(vulkan_so, "vkQueuePresentKHR"));
-
     vkQueuePresentKHR(gQueue, &presentInfo);
 }
 
@@ -979,21 +787,11 @@ static void engine_draw_frame(struct engine* engine) {
  * Tear down the EGL context currently associated with the display.
  */
 static void engine_term_display(struct engine* engine) {
-    PFN_vkDestroySurfaceKHR vkDestroySurfaceKHR =
-        reinterpret_cast<PFN_vkDestroySurfaceKHR>(
-            dlsym(vulkan_so, "vkDestroySurfaceKHR"));
-
-    PFN_vkDestroyDevice vkDestroyDevice =
-        reinterpret_cast<PFN_vkDestroyDevice>(
-            dlsym(vulkan_so, "vkDestroyDevice"));
-
-    PFN_vkDestroyInstance vkDestroyInstance =
-        reinterpret_cast<PFN_vkDestroyInstance>(
-            dlsym(vulkan_so, "vkDestroyInstance"));
-
     vkDestroySurfaceKHR(getVkProcInstance, gSurface, nullptr);
     vkDestroyDevice(gDevice, nullptr);
     vkDestroyInstance(getVkProcInstance, nullptr);
+
+    unloadVKLibs();
 }
 
 /**
