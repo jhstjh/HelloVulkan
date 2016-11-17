@@ -44,5 +44,8 @@ VK_IMPORT(vkBindBufferMemory);
 VK_IMPORT(vkMapMemory);
 VK_IMPORT(vkUnmapMemory);
 VK_IMPORT(vkCmdBindVertexBuffers);
+VK_IMPORT(vkCmdCopyBuffer);
+VK_IMPORT(vkQueueWaitIdle);
+VK_IMPORT(vkFreeCommandBuffers);
 
 #undef VK_IMPORT
