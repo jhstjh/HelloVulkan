@@ -19,3 +19,5 @@ HelloVulkan/Tegra-Android/*
 /Tegra-Android/Debug/HelloVulkan.apk
 /Tegra-Android/Debug/libHelloVulkan.so
 /Tegra-Android/Debug/stripped_libHelloVulkan.so
+/*.opendb
+/HelloVulkan.VC.db
