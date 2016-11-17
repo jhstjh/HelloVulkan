@@ -68,8 +68,8 @@ VkRenderPass        gRenderPass;
 VkCommandPool       gCmdPool;
 std::vector<VkCommandBuffer>    gCmdBuffer;
 uint32_t            gCmdBufferLen;
-VkSemaphore         gSemaphore;
-VkFence             gFence;
+VkSemaphore         gimageAvailableSemaphore;
+VkSemaphore         grenderFinishedSemaphore;
 
 VkPipelineLayout  gPLayout;
 VkPipelineCache   gPCache;
@@ -324,6 +324,46 @@ static int engine_init_display(struct engine* engine) {
     deviceCreateInfo.enabledLayerCount = deviceLayerNames.size();
     deviceCreateInfo.ppEnabledLayerNames = deviceLayerNames.data();
 
+
+    // find queue family
+    uint32_t graphicsFamilyIdx = 0;
+    uint32_t presentFamilyIdx = 0;
+
+    uint32_t queueFamilyCount = 0;
+
+    PFN_vkGetPhysicalDeviceQueueFamilyProperties vkGetPhysicalDeviceQueueFamilyProperties =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(
+            dlsym(vulkan_so, "vkGetPhysicalDeviceQueueFamilyProperties"));
+
+    PFN_vkGetPhysicalDeviceSurfaceSupportKHR vkGetPhysicalDeviceSurfaceSupportKHR =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceSupportKHR>(
+            dlsym(vulkan_so, "vkGetPhysicalDeviceSurfaceSupportKHR"));
+
+    vkGetPhysicalDeviceQueueFamilyProperties(gPhysicalDevice, &queueFamilyCount, nullptr);
+
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(gPhysicalDevice, &queueFamilyCount, queueFamilies.data());
+
+    uint32_t i = 0;
+    for (const auto& queueFamily : queueFamilies) {
+        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            graphicsFamilyIdx = i;
+        }
+
+        VkBool32 presentSupport = false;
+        result = vkGetPhysicalDeviceSurfaceSupportKHR(gPhysicalDevice, i, gSurface, &presentSupport);
+        assert(result == VK_SUCCESS);
+
+        if (queueFamily.queueCount > 0 && presentSupport) {
+            presentFamilyIdx = i;
+        }
+
+        i++;
+    }
+
+    uint32_t queueFamilyIndices[] = { graphicsFamilyIdx, presentFamilyIdx };
+
+    // create device
     PFN_vkCreateDevice vkCreateDevice =
         reinterpret_cast<PFN_vkCreateDevice>(
             dlsym(vulkan_so, "vkCreateDevice"));
@@ -369,9 +409,9 @@ static int engine_init_display(struct engine* engine) {
     gDisplaySize = surfaceCapabilities.currentExtent;
     gDisplayFormat = formats[chosenFormat].format;
 
-    uint32_t queueFamily = 0;
 
-    VkSwapchainCreateInfoKHR swapchainCreateInfo;
+    // create swapchain
+    VkSwapchainCreateInfoKHR swapchainCreateInfo = {};
     swapchainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     swapchainCreateInfo.pNext = nullptr;
     swapchainCreateInfo.surface = gSurface;
@@ -383,11 +423,12 @@ static int engine_init_display(struct engine* engine) {
     swapchainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     swapchainCreateInfo.imageArrayLayers = 1;
     swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    swapchainCreateInfo.queueFamilyIndexCount = 1;
-    swapchainCreateInfo.pQueueFamilyIndices = &queueFamily;
+    swapchainCreateInfo.queueFamilyIndexCount = 2;
+    swapchainCreateInfo.pQueueFamilyIndices = queueFamilyIndices;
     swapchainCreateInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
     swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
     swapchainCreateInfo.clipped = VK_FALSE;
+    swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
 
     PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR =
         reinterpret_cast<PFN_vkCreateSwapchainKHR>(
@@ -414,8 +455,8 @@ static int engine_init_display(struct engine* engine) {
     attachmentDescriptions.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachmentDescriptions.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachmentDescriptions.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachmentDescriptions.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    attachmentDescriptions.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    attachmentDescriptions.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachmentDescriptions.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentReference colorReference;
     colorReference.attachment = 0;
@@ -858,18 +899,6 @@ static int engine_init_display(struct engine* engine) {
         assert(result == VK_SUCCESS);
     }
 
-    VkFenceCreateInfo fenceCreateInfo;
-    fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceCreateInfo.pNext = nullptr;
-    fenceCreateInfo.flags = 0;
-
-    PFN_vkCreateFence vkCreateFence =
-        reinterpret_cast<PFN_vkCreateFence>(
-            dlsym(vulkan_so, "vkCreateFence"));
-
-    result = vkCreateFence(gDevice, &fenceCreateInfo, nullptr, &gFence);
-    assert(result == VK_SUCCESS);
-
     VkSemaphoreCreateInfo semaphoreCreateInfo;
     semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     semaphoreCreateInfo.pNext = nullptr;
@@ -879,7 +908,10 @@ static int engine_init_display(struct engine* engine) {
         reinterpret_cast<PFN_vkCreateSemaphore>(
             dlsym(vulkan_so, "vkCreateSemaphore"));
 
-    result = vkCreateSemaphore(gDevice, &semaphoreCreateInfo, nullptr, &gSemaphore);
+    result = vkCreateSemaphore(gDevice, &semaphoreCreateInfo, nullptr, &gimageAvailableSemaphore);
+    assert(result == VK_SUCCESS);
+
+    result = vkCreateSemaphore(gDevice, &semaphoreCreateInfo, nullptr, &grenderFinishedSemaphore);
     assert(result == VK_SUCCESS);
 
     init = true;
@@ -903,48 +935,37 @@ static void engine_draw_frame(struct engine* engine) {
             dlsym(vulkan_so, "vkAcquireNextImageKHR"));
 
     uint32_t nextIndex;
-    result = vkAcquireNextImageKHR(gDevice, gSwapchain, 0xFFFFFFFFFFFFFFFFull, gSemaphore, gFence, &nextIndex);
+    result = vkAcquireNextImageKHR(gDevice, gSwapchain, 0xFFFFFFFFFFFFFFFFull, gimageAvailableSemaphore, VK_NULL_HANDLE, &nextIndex);
     assert(result == VK_SUCCESS);
 
-    PFN_vkResetFences vkResetFences =
-        reinterpret_cast<PFN_vkResetFences>(
-            dlsym(vulkan_so, "vkResetFences"));
-
-    result = vkResetFences(gDevice, 1, &gFence);
-    assert(result == VK_SUCCESS);
+    VkSemaphore signalSemaphores[] = { grenderFinishedSemaphore };
+    VkSemaphore waitSemaphores[] = { gimageAvailableSemaphore };
 
     VkSubmitInfo submitInfo;
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.pNext = nullptr;
     submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &gSemaphore;
+    submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &gCmdBuffer[nextIndex];
-    submitInfo.signalSemaphoreCount = 0;
-    submitInfo.pSignalSemaphores = nullptr;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
 
     PFN_vkQueueSubmit vkQueueSubmit =
         reinterpret_cast<PFN_vkQueueSubmit>(
             dlsym(vulkan_so, "vkQueueSubmit"));
 
-    result = vkQueueSubmit(gQueue, 1, &submitInfo, gFence);
+    result = vkQueueSubmit(gQueue, 1, &submitInfo, VK_NULL_HANDLE);
     assert(result == VK_SUCCESS);
 
-    PFN_vkWaitForFences vkWaitForFences =
-        reinterpret_cast<PFN_vkWaitForFences>(
-            dlsym(vulkan_so, "vkWaitForFences"));
-
-    result = vkWaitForFences(gDevice, 1, &gFence, VK_TRUE, 0xFFFFFFFFFFFFFFFFull);
-    assert(result == VK_SUCCESS);
-
-    VkPresentInfoKHR presentInfo;
-    presentInfo.sType = VK_STRUCTURE_TYPE_DISPLAY_PRESENT_INFO_KHR;
+    VkPresentInfoKHR presentInfo = {};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.pNext = nullptr;
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &gSwapchain;
     presentInfo.pImageIndices = &nextIndex;
-    presentInfo.waitSemaphoreCount = 0;
-    presentInfo.pWaitSemaphores = nullptr;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
     presentInfo.pResults = &result;
 
     PFN_vkQueuePresentKHR vkQueuePresentKHR =
