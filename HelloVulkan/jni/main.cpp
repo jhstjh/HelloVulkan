@@ -31,14 +31,14 @@
 #include <vector>
 #include <cstdint>
 #include <array>
+#include <chrono>
 
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
 
 #include "VKFuncs.h"
 
-#include "mathfu/vector_2.h"
-#include "mathfu/vector_3.h"
+#include "mathfu/glsl_mappings.h"
 
 using namespace mathfu;
 
@@ -77,18 +77,23 @@ VkBuffer            gVertexBuffer;
 VkDeviceMemory      gVertexBufferMemory;
 VkBuffer            gIndexBuffer;
 VkDeviceMemory      gIndexBufferMemory;
+VkBuffer            gUniformStagingBuffer;
+VkDeviceMemory      gUniformStagingBufferMemory;
+VkBuffer            gUniformBuffer;
+VkDeviceMemory      gUniformBufferMemory;
+VkDescriptorPool    gDescriptorPool;
+VkDescriptorSet     gDescriptorSet;
+
 uint32_t            gCmdBufferLen;
 VkSemaphore         gimageAvailableSemaphore;
 VkSemaphore         grenderFinishedSemaphore;
 
+VkDescriptorSetLayout gDescriptorSetLayout;
 VkPipelineLayout  gPLayout;
 VkPipelineCache   gPCache;
 VkPipeline        gPipeline;
 
 bool init = false;
-
-using vec2 = Vector<float, 2>;
-using vec3 = Vector<float, 3>;
 
 struct Vertex
 {
@@ -131,6 +136,14 @@ const std::vector<uint16_t> indices = {
     0, 1, 2, 2, 3, 0
 };
 
+struct UniformBufferObject
+{
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+};
+
+
 /**
  * Our saved state data.
  */
@@ -162,6 +175,41 @@ struct engine {
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType, uint64_t obj, size_t location, int32_t code, const char* layerPrefix, const char* msg, void* userData) {
     LOGW("validation layer: %s\n", msg);
     return VK_FALSE;
+}
+
+void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+{
+    VkCommandBufferAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = gCmdPool;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer copyCommandBuffer;
+    auto result = vkAllocateCommandBuffers(gDevice, &allocInfo, &copyCommandBuffer);
+    assert(result == VK_SUCCESS);
+
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(copyCommandBuffer, &beginInfo);
+    VkBufferCopy copyRegion = {};
+    copyRegion.srcOffset = 0; // Optional
+    copyRegion.dstOffset = 0; // Optional
+    copyRegion.size = size;
+    vkCmdCopyBuffer(copyCommandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+    vkEndCommandBuffer(copyCommandBuffer);
+
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &copyCommandBuffer;
+
+    vkQueueSubmit(gQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(gQueue);
+    vkFreeCommandBuffers(gDevice, gCmdPool, 1, &copyCommandBuffer);
 }
 
 /**
@@ -522,12 +570,119 @@ static int engine_init_display(struct engine* engine) {
         assert(result == VK_SUCCESS);
     }
 
+    // create buffer lambda
+    auto createBuffer = [](VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
+    {
+        VkBufferCreateInfo bufferInfo = {};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = size;
+        bufferInfo.usage = usage;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        auto result = vkCreateBuffer(gDevice, &bufferInfo, nullptr, &buffer);
+        assert(result == VK_SUCCESS);
+
+        VkMemoryRequirements memRequirements;
+        vkGetBufferMemoryRequirements(gDevice, buffer, &memRequirements);
+
+        VkPhysicalDeviceMemoryProperties memProperties;
+        vkGetPhysicalDeviceMemoryProperties(gPhysicalDevice, &memProperties);
+
+        uint32_t memoryTypeIndex;
+        for (memoryTypeIndex = 0; memoryTypeIndex < memProperties.memoryTypeCount; memoryTypeIndex++) {
+            if ((memRequirements.memoryTypeBits & (1 << memoryTypeIndex)) && (memProperties.memoryTypes[memoryTypeIndex].propertyFlags & properties) == properties)
+            {
+                break;
+            }
+        }
+        assert(memoryTypeIndex != memProperties.memoryTypeCount);
+
+        VkMemoryAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = memoryTypeIndex;
+
+        result = vkAllocateMemory(gDevice, &allocInfo, nullptr, &bufferMemory);
+        assert(result == VK_SUCCESS);
+
+        vkBindBufferMemory(gDevice, buffer, bufferMemory, 0);
+    };
+
+    // create descriptor set layout
+    VkDescriptorSetLayoutBinding uboLayoutBinding = {};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboLayoutBinding;
+
+    result = vkCreateDescriptorSetLayout(gDevice, &layoutInfo, nullptr, &gDescriptorSetLayout);
+    assert(result == VK_SUCCESS);
+
+    // create uniform buffer
+    {
+        VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, gUniformStagingBuffer, gUniformStagingBufferMemory);
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gUniformBuffer, gUniformBufferMemory);
+    }
+
+    // create descriptor pool
+    VkDescriptorPoolSize poolSize = {};
+    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSize.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = 1;
+
+    result = vkCreateDescriptorPool(gDevice, &poolInfo, nullptr, &gDescriptorPool);
+    assert(result == VK_SUCCESS);
+
+    // create descriptor set
+    VkDescriptorSetLayout uboLayouts[] = { gDescriptorSetLayout };
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = gDescriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = uboLayouts;
+
+    result = vkAllocateDescriptorSets(gDevice, &allocInfo, &gDescriptorSet);
+    assert(result == VK_SUCCESS);
+
+    VkDescriptorBufferInfo bufferInfo = {};
+    bufferInfo.buffer = gUniformBuffer;
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(UniformBufferObject);
+
+    VkWriteDescriptorSet descriptorWrite = {};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = gDescriptorSet;
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pBufferInfo = &bufferInfo;
+    descriptorWrite.pImageInfo = nullptr;
+    descriptorWrite.pTexelBufferView = nullptr;
+
+    vkUpdateDescriptorSets(gDevice, 1, &descriptorWrite, 0, nullptr);
+
+
     // create graphics pipeline
-    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo;
+    VkDescriptorSetLayout setLayouts[] = { gDescriptorSetLayout };
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
     pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutCreateInfo.pNext = nullptr;
-    pipelineLayoutCreateInfo.setLayoutCount = 0;
-    pipelineLayoutCreateInfo.pSetLayouts = nullptr;
+    pipelineLayoutCreateInfo.setLayoutCount = 1;
+    pipelineLayoutCreateInfo.pSetLayouts = setLayouts;
     pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
     pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
 
@@ -649,7 +804,7 @@ static int engine_init_display(struct engine* engine) {
     rasterInfo.rasterizerDiscardEnable = VK_FALSE;
     rasterInfo.polygonMode = VK_POLYGON_MODE_FILL;
     rasterInfo.cullMode = VK_CULL_MODE_NONE;
-    rasterInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterInfo.depthBiasEnable = VK_FALSE;
     rasterInfo.lineWidth = 1;
 
@@ -725,44 +880,6 @@ static int engine_init_display(struct engine* engine) {
     result = vkCreateCommandPool(gDevice, &cmdPoolCreateInfo, nullptr, &gCmdPool);
     assert(result == VK_SUCCESS);
 
-    // create buffer lambda
-    auto createBuffer = [](VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
-    {
-        VkBufferCreateInfo bufferInfo = {};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = size;
-        bufferInfo.usage = usage;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        auto result = vkCreateBuffer(gDevice, &bufferInfo, nullptr, &buffer);
-        assert(result == VK_SUCCESS);
-
-        VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(gDevice, buffer, &memRequirements);
-
-        VkPhysicalDeviceMemoryProperties memProperties;
-        vkGetPhysicalDeviceMemoryProperties(gPhysicalDevice, &memProperties);
-
-        uint32_t memoryTypeIndex;
-        for (memoryTypeIndex = 0; memoryTypeIndex < memProperties.memoryTypeCount; memoryTypeIndex++) {
-            if ((memRequirements.memoryTypeBits & (1 << memoryTypeIndex)) && (memProperties.memoryTypes[memoryTypeIndex].propertyFlags & properties) == properties)
-            {
-                break;
-            }
-        }
-        assert(memoryTypeIndex != memProperties.memoryTypeCount);
-
-        VkMemoryAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = memoryTypeIndex;
-
-        result = vkAllocateMemory(gDevice, &allocInfo, nullptr, &bufferMemory);
-        assert(result == VK_SUCCESS);
-
-        vkBindBufferMemory(gDevice, buffer, bufferMemory, 0);
-    };
-
     // create vertex buffer
     {
         VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
@@ -783,37 +900,7 @@ static int engine_init_display(struct engine* engine) {
         createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gVertexBuffer, gVertexBufferMemory);
 
         // copy vertex buffer from host visible to device local
-        VkCommandBufferAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandPool = gCmdPool;
-        allocInfo.commandBufferCount = 1;
-
-        VkCommandBuffer copyCommandBuffer;
-        result = vkAllocateCommandBuffers(gDevice, &allocInfo, &copyCommandBuffer);
-        assert(result == VK_SUCCESS);
-
-        VkCommandBufferBeginInfo beginInfo = {};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        vkBeginCommandBuffer(copyCommandBuffer, &beginInfo);
-        VkBufferCopy copyRegion = {};
-        copyRegion.srcOffset = 0; // Optional
-        copyRegion.dstOffset = 0; // Optional
-        copyRegion.size = size;
-        vkCmdCopyBuffer(copyCommandBuffer, stagingBuffer, gVertexBuffer, 1, &copyRegion);
-
-        vkEndCommandBuffer(copyCommandBuffer);
-
-        VkSubmitInfo submitInfo = {};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &copyCommandBuffer;
-
-        vkQueueSubmit(gQueue, 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(gQueue);
-        vkFreeCommandBuffers(gDevice, gCmdPool, 1, &copyCommandBuffer);
+        copyBuffer(stagingBuffer, gVertexBuffer, size);
     }
 
     {
@@ -835,38 +922,8 @@ static int engine_init_display(struct engine* engine) {
         // device local buffer
         createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gIndexBuffer, gIndexBufferMemory);
 
-        // copy vertex buffer from host visible to device local
-        VkCommandBufferAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandPool = gCmdPool;
-        allocInfo.commandBufferCount = 1;
-
-        VkCommandBuffer copyCommandBuffer;
-        result = vkAllocateCommandBuffers(gDevice, &allocInfo, &copyCommandBuffer);
-        assert(result == VK_SUCCESS);
-
-        VkCommandBufferBeginInfo beginInfo = {};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        vkBeginCommandBuffer(copyCommandBuffer, &beginInfo);
-        VkBufferCopy copyRegion = {};
-        copyRegion.srcOffset = 0; // Optional
-        copyRegion.dstOffset = 0; // Optional
-        copyRegion.size = size;
-        vkCmdCopyBuffer(copyCommandBuffer, stagingBuffer, gIndexBuffer, 1, &copyRegion);
-
-        vkEndCommandBuffer(copyCommandBuffer);
-
-        VkSubmitInfo submitInfo = {};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &copyCommandBuffer;
-
-        vkQueueSubmit(gQueue, 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(gQueue);
-        vkFreeCommandBuffers(gDevice, gCmdPool, 1, &copyCommandBuffer);
+        // copy index buffer from host visible to device local
+        copyBuffer(stagingBuffer, gIndexBuffer, size);
     }
 
     // create command buffer
@@ -921,6 +978,7 @@ static int engine_init_display(struct engine* engine) {
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(gCmdBuffer[bufferIndex], 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(gCmdBuffer[bufferIndex], gIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindDescriptorSets(gCmdBuffer[bufferIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, gPLayout, 0, 1, &gDescriptorSet, 0, nullptr);
 
         vkCmdDrawIndexed(gCmdBuffer[bufferIndex], indices.size(), 1, 0, 0, 0);
 
@@ -1060,6 +1118,30 @@ static void engine_handle_cmd(struct android_app* app, int32_t cmd) {
     }
 }
 
+void update()
+{
+    static auto startTime = std::chrono::high_resolution_clock::now();
+
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count() / 1000.0f;
+
+    UniformBufferObject ubo = {};
+        //glm::rotate(glm::mat4(), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    auto rotMat = Matrix<float, 3>::RotationZ(time * 90.f / 180.f * 3.1415926);
+    ubo.model = mat4::FromRotationMatrix(rotMat);
+    //ubo.model = mat4::Identity();
+    ubo.view = mat4::Identity();// mat4::LookAt(vec3(2.0f, 2.0f, 2.0f), vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 1.0f, 0.0f));
+    ubo.proj = mat4::Identity();// mat4::Perspective((45.0f) / 180.f * 3.1415926, (float)gDisplaySize.width / (float)gDisplaySize.height, 0.1f, 10.0f);
+    //ubo.proj(1, 1) *= -1;
+
+    void* data;
+    vkMapMemory(gDevice, gUniformStagingBufferMemory, 0, sizeof(ubo), 0, &data);
+    assert(data);
+    memcpy(data, &ubo, sizeof(ubo));
+    vkUnmapMemory(gDevice, gUniformStagingBufferMemory);
+
+    copyBuffer(gUniformStagingBuffer, gUniformBuffer, sizeof(ubo));
+}
 
 /**
  * This is the main entry point of a native application that is using
@@ -1139,6 +1221,8 @@ void android_main(struct android_app* state) {
             if (engine.state.angle > 1) {
                 engine.state.angle = 0;
             }
+
+            update();
 
             // Drawing is throttled to the screen update rate, so there
             // is no need to do timing here.

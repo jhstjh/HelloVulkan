@@ -49,5 +49,10 @@ VK_IMPORT(vkQueueWaitIdle);
 VK_IMPORT(vkFreeCommandBuffers);
 VK_IMPORT(vkCmdBindIndexBuffer);
 VK_IMPORT(vkCmdDrawIndexed);
+VK_IMPORT(vkCreateDescriptorSetLayout);
+VK_IMPORT(vkCreateDescriptorPool);
+VK_IMPORT(vkAllocateDescriptorSets);
+VK_IMPORT(vkUpdateDescriptorSets);
+VK_IMPORT(vkCmdBindDescriptorSets);
 
 #undef VK_IMPORT
