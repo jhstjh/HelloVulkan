@@ -54,5 +54,12 @@ VK_IMPORT(vkCreateDescriptorPool);
 VK_IMPORT(vkAllocateDescriptorSets);
 VK_IMPORT(vkUpdateDescriptorSets);
 VK_IMPORT(vkCmdBindDescriptorSets);
+VK_IMPORT(vkCreateImage);
+VK_IMPORT(vkGetImageMemoryRequirements);
+VK_IMPORT(vkBindImageMemory);
+VK_IMPORT(vkGetImageSubresourceLayout);
+VK_IMPORT(vkCmdPipelineBarrier);
+VK_IMPORT(vkCmdCopyImage);
+VK_IMPORT(vkCreateSampler);
 
 #undef VK_IMPORT

@@ -22,6 +22,9 @@
     <Filter Include="jni\mathfu">
       <UniqueIdentifier>{ced9d065-134f-478c-ae68-198435cdbf16}</UniqueIdentifier>
     </Filter>
+    <Filter Include="texture">
+      <UniqueIdentifier>{813325a0-82ab-4c6d-a91b-179befdf1dc9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <AndroidBuild Include="AndroidManifest.xml" />
@@ -80,6 +83,9 @@
     <ClInclude Include="jni\mathfu\matrix_4x4.h">
       <Filter>jni\mathfu</Filter>
     </ClInclude>
+    <ClInclude Include="jni\ext\stb_image.h">
+      <Filter>jni</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="assets\shader.frag">
@@ -88,5 +94,10 @@
     <CustomBuild Include="assets\shader.vert">
       <Filter>shaders</Filter>
     </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="assets\texture.jpg">
+      <Filter>texture</Filter>
+    </None>
   </ItemGroup>
 </Project>

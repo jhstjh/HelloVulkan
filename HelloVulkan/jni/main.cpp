@@ -40,12 +40,17 @@
 
 #include "mathfu/glsl_mappings.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 using namespace mathfu;
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "native-activity", __VA_ARGS__))
 #define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "native-activity", __VA_ARGS__))
 
 #define LOG_ACCELEROMETER false
+
+#define ASSERT_VK_SUCCESS(result) assert(result == VK_SUCCESS)
 
 
 typedef PFN_vkVoidFunction(VKAPI_CALL * PFN_vkGetProcAddressNV) (const char *name);
@@ -83,6 +88,12 @@ VkBuffer            gUniformBuffer;
 VkDeviceMemory      gUniformBufferMemory;
 VkDescriptorPool    gDescriptorPool;
 VkDescriptorSet     gDescriptorSet;
+VkImage             gStagingImage;
+VkDeviceMemory      gStagingImageMemory;
+VkImage             gTextureImage;
+VkDeviceMemory      gTextureImageMemory;
+VkImageView         gTextureImageView;
+VkSampler           gTextureSampler;
 
 uint32_t            gCmdBufferLen;
 VkSemaphore         gimageAvailableSemaphore;
@@ -99,6 +110,7 @@ struct Vertex
 {
     vec2 pos;
     vec3 color;
+    vec2 texCoord;
 
     static VkVertexInputBindingDescription getBindingDescription() {
         VkVertexInputBindingDescription bindingDescription = {};
@@ -109,8 +121,8 @@ struct Vertex
         return bindingDescription;
     }
 
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions = {};
+    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
+        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions = {};
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
         attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
@@ -121,15 +133,20 @@ struct Vertex
         attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[1].offset = offsetof(Vertex, color);
 
+        attributeDescriptions[2].binding = 0;
+        attributeDescriptions[2].location = 2;
+        attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
+
         return attributeDescriptions;
     }
 };
 
 const std::vector<Vertex> vertices = {
-    { { -0.5f, -0.5f },{ 1.0f, 0.0f, 0.0f } },
-    { { 0.5f, -0.5f },{ 0.0f, 1.0f, 0.0f } },
-    { { 0.5f, 0.5f },{ 0.0f, 0.0f, 1.0f } },
-    { { -0.5f, 0.5f },{ 1.0f, 1.0f, 1.0f } }
+    { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f } },
+    { {  0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f } },
+    { {  0.5f,  0.5f }, { 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f } },
+    { { -0.5f,  0.5f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } }
 };
 
 const std::vector<uint16_t> indices = {
@@ -177,7 +194,56 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugReportFlagsEXT flags,
     return VK_FALSE;
 }
 
-void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiliting, VkImageUsageFlags usage,
+    VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory & imageMemory)
+{
+    VkImageCreateInfo imageInfo = {};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = width;
+    imageInfo.extent.height = height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = format;
+    imageInfo.tiling = tiliting;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+    imageInfo.usage = usage;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.flags = 0;
+
+    auto result = vkCreateImage(gDevice, &imageInfo, nullptr, &image);
+    ASSERT_VK_SUCCESS(result);
+
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(gDevice, image, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(gPhysicalDevice, &memProperties);
+
+    uint32_t memoryTypeIndex;
+    for (memoryTypeIndex = 0; memoryTypeIndex < memProperties.memoryTypeCount; memoryTypeIndex++) {
+        if ((memRequirements.memoryTypeBits & (1 << memoryTypeIndex)) && (memProperties.memoryTypes[memoryTypeIndex].propertyFlags & properties) == properties)
+        {
+            break;
+        }
+    }
+    assert(memoryTypeIndex != memProperties.memoryTypeCount);
+
+    allocInfo.memoryTypeIndex = memoryTypeIndex;
+    result = vkAllocateMemory(gDevice, &allocInfo, nullptr, &imageMemory);
+    ASSERT_VK_SUCCESS(result);
+
+    result = vkBindImageMemory(gDevice, image, imageMemory, 0);
+    ASSERT_VK_SUCCESS(result);
+}
+
+VkCommandBuffer beginSingleTimeCommands()
 {
     VkCommandBufferAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -185,37 +251,136 @@ void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
     allocInfo.commandPool = gCmdPool;
     allocInfo.commandBufferCount = 1;
 
-    VkCommandBuffer copyCommandBuffer;
-    auto result = vkAllocateCommandBuffers(gDevice, &allocInfo, &copyCommandBuffer);
-    assert(result == VK_SUCCESS);
+    VkCommandBuffer commandBuffer;
+    vkAllocateCommandBuffers(gDevice, &allocInfo, &commandBuffer);
 
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    vkBeginCommandBuffer(copyCommandBuffer, &beginInfo);
-    VkBufferCopy copyRegion = {};
-    copyRegion.srcOffset = 0; // Optional
-    copyRegion.dstOffset = 0; // Optional
-    copyRegion.size = size;
-    vkCmdCopyBuffer(copyCommandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+    vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    vkEndCommandBuffer(copyCommandBuffer);
+    return commandBuffer;
+}
+
+void endSingleTimeCommands(VkCommandBuffer commandBuffer)
+{
+    vkEndCommandBuffer(commandBuffer);
 
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &copyCommandBuffer;
+    submitInfo.pCommandBuffers = &commandBuffer;
 
     vkQueueSubmit(gQueue, 1, &submitInfo, VK_NULL_HANDLE);
     vkQueueWaitIdle(gQueue);
-    vkFreeCommandBuffers(gDevice, gCmdPool, 1, &copyCommandBuffer);
+
+    vkFreeCommandBuffers(gDevice, gCmdPool, 1, &commandBuffer);
+}
+
+void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+{
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+    VkBufferCopy copyRegion = {};
+    copyRegion.size = size;
+    vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+    endSingleTimeCommands(commandBuffer);
+}
+
+void copyImage(VkImage srcImage, VkImage dstImage, uint32_t width, uint32_t height)
+{
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+    VkImageSubresourceLayers subResource = {};
+    subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    subResource.baseArrayLayer = 0;
+    subResource.mipLevel = 0;
+    subResource.layerCount = 1;
+
+    VkImageCopy region = {};
+    region.srcSubresource = subResource;
+    region.dstSubresource = subResource;
+    region.srcOffset = { 0, 0, 0 };
+    region.dstOffset = { 0, 0, 0 };
+    region.extent.width = width;
+    region.extent.height = height;
+    region.extent.depth = 1;
+
+    vkCmdCopyImage(commandBuffer, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 
+        dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    endSingleTimeCommands(commandBuffer);
+}
+
+void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+{
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) 
+    {
+        barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
+    {
+        barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    }
+    else {
+        assert(false);
+    }
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    endSingleTimeCommands(commandBuffer);
+}
+
+void createImageView(VkImage image, VkFormat format, VkImageView &imageView) 
+{
+    VkImageViewCreateInfo viewInfo = {};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = format;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    auto result = vkCreateImageView(gDevice, &viewInfo, nullptr, &imageView);
+    ASSERT_VK_SUCCESS(result);
 }
 
 /**
  * Initialize an EGL context for the current display.
  */
 static int engine_init_display(struct engine* engine) {
+
+    AAssetManager* assetManager = engine->app->activity->assetManager;
+    off_t size;
+
     loadVKLibs();
     loadVKFuncs();
 
@@ -522,25 +687,7 @@ static int engine_init_display(struct engine* engine) {
     gDisplayViews.resize(SwapchainImagesCount);
     for (uint32_t i = 0; i < SwapchainImagesCount; i++)
     {
-        VkImageViewCreateInfo viewCreateInfo;
-        viewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewCreateInfo.pNext = nullptr;
-        viewCreateInfo.image = displayImages[i];
-        viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewCreateInfo.format = gDisplayFormat;
-        viewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_R;
-        viewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_G;
-        viewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_B;
-        viewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_A;
-        viewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        viewCreateInfo.subresourceRange.baseMipLevel = 0;
-        viewCreateInfo.subresourceRange.levelCount = 1;
-        viewCreateInfo.subresourceRange.baseArrayLayer = 0;
-        viewCreateInfo.subresourceRange.layerCount = 1;
-        viewCreateInfo.flags = 0;
-
-        result = vkCreateImageView(gDevice, &viewCreateInfo, nullptr, &gDisplayViews[i]);
-        assert(result == VK_SUCCESS);
+        createImageView(displayImages[i], gDisplayFormat, gDisplayViews[i]);
     }
 
     // no depth buffer for now
@@ -616,13 +763,170 @@ static int engine_init_display(struct engine* engine) {
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
 
+    VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
+    samplerLayoutBinding.binding = 1;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
+
     VkDescriptorSetLayoutCreateInfo layoutInfo = {};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &uboLayoutBinding;
+    layoutInfo.bindingCount = bindings.size();
+    layoutInfo.pBindings = bindings.data();
 
     result = vkCreateDescriptorSetLayout(gDevice, &layoutInfo, nullptr, &gDescriptorSetLayout);
     assert(result == VK_SUCCESS);
+
+    // create command pool
+    VkCommandPoolCreateInfo cmdPoolCreateInfo;
+    cmdPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    cmdPoolCreateInfo.pNext = nullptr;
+    cmdPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    cmdPoolCreateInfo.queueFamilyIndex = 0;
+
+    result = vkCreateCommandPool(gDevice, &cmdPoolCreateInfo, nullptr, &gCmdPool);
+    assert(result == VK_SUCCESS);
+
+    // create texture image
+    {
+        int32_t texWidth, texHeight, texChannels;
+        AAsset* texFile = AAssetManager_open(assetManager, "texture.jpg", AASSET_MODE_UNKNOWN);
+        assert(texFile);
+        auto size = AAsset_getLength(texFile);
+        std::vector<uint8_t> texData(size);
+        AAsset_read(texFile, texData.data(), size);
+        AAsset_close(texFile);
+
+        auto pixels = stbi_load_from_memory(texData.data(), size, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+        assert(pixels);
+
+        createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, gStagingImage, gStagingImageMemory);
+
+        void* data;
+        vkMapMemory(gDevice, gStagingImageMemory, 0, imageSize, 0, &data);
+        assert(data);
+
+        VkImageSubresource subresource = {};
+        subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        subresource.mipLevel = 0;
+        subresource.arrayLayer = 0;
+
+        VkSubresourceLayout stagingImageLayout;
+        vkGetImageSubresourceLayout(gDevice, gStagingImage, &subresource, &stagingImageLayout);
+
+        if (stagingImageLayout.rowPitch = texWidth * 4)
+        {
+            memcpy(data, pixels, imageSize);
+        }
+        else
+        {
+            uint8_t* dataBytes = reinterpret_cast<uint8_t*>(data);
+
+            for (auto y = 0; y < texHeight; y++)
+            {
+                memcpy(
+                    &dataBytes[y * stagingImageLayout.rowPitch],
+                    &pixels[y * texWidth * 4],
+                    texWidth * 4
+                );
+            }
+        }
+
+        vkUnmapMemory(gDevice, gStagingImageMemory);
+        stbi_image_free(pixels);
+
+        createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            gTextureImage, gTextureImageMemory);
+
+        transitionImageLayout(gStagingImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        transitionImageLayout(gTextureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+        copyImage(gStagingImage, gTextureImage, texWidth, texHeight);
+
+        transitionImageLayout(gTextureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+
+    // create texture image view
+    {
+        createImageView(gTextureImage, VK_FORMAT_R8G8B8A8_UNORM, gTextureImageView);
+    }
+
+    // create texture sampler
+    {
+        VkSamplerCreateInfo samplerInfo = {};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.anisotropyEnable = VK_TRUE;
+        samplerInfo.maxAnisotropy = 16;
+        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        samplerInfo.unnormalizedCoordinates = VK_FALSE;
+        samplerInfo.compareEnable = VK_FALSE;
+        samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerInfo.mipLodBias = 0.f;
+        samplerInfo.minLod = 0.f;
+        samplerInfo.maxLod = 0.f;
+
+        auto result = vkCreateSampler(gDevice, &samplerInfo, nullptr, &gTextureSampler);
+        ASSERT_VK_SUCCESS(result);
+    }
+
+    // create vertex buffer
+    {
+        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+
+        // staging buffer
+        VkBuffer            stagingBuffer;
+        VkDeviceMemory      stagingBufferMemory;
+
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(gDevice, stagingBufferMemory, 0, bufferSize, 0, &data);
+        assert(data);
+        memcpy(data, vertices.data(), (size_t)bufferSize);
+        vkUnmapMemory(gDevice, stagingBufferMemory);
+
+        // device local buffer
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gVertexBuffer, gVertexBufferMemory);
+
+        // copy vertex buffer from host visible to device local
+        copyBuffer(stagingBuffer, gVertexBuffer, bufferSize);
+    }
+
+    {
+        // create index buffer
+        VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+        // staging buffer
+        VkBuffer            stagingBuffer;
+        VkDeviceMemory      stagingBufferMemory;
+
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(gDevice, stagingBufferMemory, 0, bufferSize, 0, &data);
+        assert(data);
+        memcpy(data, indices.data(), (size_t)bufferSize);
+        vkUnmapMemory(gDevice, stagingBufferMemory);
+
+        // device local buffer
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gIndexBuffer, gIndexBufferMemory);
+
+        // copy index buffer from host visible to device local
+        copyBuffer(stagingBuffer, gIndexBuffer, bufferSize);
+    }
 
     // create uniform buffer
     {
@@ -633,14 +937,16 @@ static int engine_init_display(struct engine* engine) {
     }
 
     // create descriptor pool
-    VkDescriptorPoolSize poolSize = {};
-    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = 1;
+    std::array<VkDescriptorPoolSize, 2> poolSizes = {};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[0].descriptorCount = 1;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[1].descriptorCount = 1;
 
     VkDescriptorPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.poolSizeCount = poolSizes.size();
+    poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = 1;
 
     result = vkCreateDescriptorPool(gDevice, &poolInfo, nullptr, &gDescriptorPool);
@@ -662,18 +968,29 @@ static int engine_init_display(struct engine* engine) {
     bufferInfo.offset = 0;
     bufferInfo.range = sizeof(UniformBufferObject);
 
-    VkWriteDescriptorSet descriptorWrite = {};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = gDescriptorSet;
-    descriptorWrite.dstBinding = 0;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.pBufferInfo = &bufferInfo;
-    descriptorWrite.pImageInfo = nullptr;
-    descriptorWrite.pTexelBufferView = nullptr;
+    VkDescriptorImageInfo imageInfo = {};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = gTextureImageView;
+    imageInfo.sampler = gTextureSampler;
 
-    vkUpdateDescriptorSets(gDevice, 1, &descriptorWrite, 0, nullptr);
+    std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
+    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[0].dstSet = gDescriptorSet;
+    descriptorWrites[0].dstBinding = 0;
+    descriptorWrites[0].dstArrayElement = 0;
+    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrites[0].descriptorCount = 1;
+    descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[1].dstSet = gDescriptorSet;
+    descriptorWrites[1].dstBinding = 1;
+    descriptorWrites[1].dstArrayElement = 0;
+    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrites[1].descriptorCount = 1;
+    descriptorWrites[1].pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(gDevice, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
 
 
     // create graphics pipeline
@@ -695,10 +1012,9 @@ static int engine_init_display(struct engine* engine) {
     dynamicStateInfo.dynamicStateCount = 0;
     dynamicStateInfo.pDynamicStates = nullptr;
 
-    AAssetManager* assetManager = engine->app->activity->assetManager;
     AAsset* vs = AAssetManager_open(assetManager, "vert.spv", AASSET_MODE_UNKNOWN);
     assert(vs);
-    auto size = AAsset_getLength(vs);
+    size = AAsset_getLength(vs);
     std::vector<uint8_t> vsData(size);
     AAsset_read(vs, vsData.data(), size);
     AAsset_close(vs);
@@ -869,62 +1185,6 @@ static int engine_init_display(struct engine* engine) {
 
     result = vkCreateGraphicsPipelines(gDevice, gPCache, 1, &pipelineCreateInfo, nullptr, &gPipeline);
     assert(result == VK_SUCCESS);
-
-    // create command pool
-    VkCommandPoolCreateInfo cmdPoolCreateInfo;
-    cmdPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    cmdPoolCreateInfo.pNext = nullptr;
-    cmdPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    cmdPoolCreateInfo.queueFamilyIndex = 0;
-
-    result = vkCreateCommandPool(gDevice, &cmdPoolCreateInfo, nullptr, &gCmdPool);
-    assert(result == VK_SUCCESS);
-
-    // create vertex buffer
-    {
-        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-
-        // staging buffer
-        VkBuffer            stagingBuffer;
-        VkDeviceMemory      stagingBufferMemory;
-
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-        void* data;
-        vkMapMemory(gDevice, stagingBufferMemory, 0, bufferSize, 0, &data);
-        assert(data);
-        memcpy(data, vertices.data(), (size_t)bufferSize);
-        vkUnmapMemory(gDevice, stagingBufferMemory);
-
-        // device local buffer
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gVertexBuffer, gVertexBufferMemory);
-
-        // copy vertex buffer from host visible to device local
-        copyBuffer(stagingBuffer, gVertexBuffer, size);
-    }
-
-    {
-        // create index buffer
-        VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-
-        // staging buffer
-        VkBuffer            stagingBuffer;
-        VkDeviceMemory      stagingBufferMemory;
-
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-        void* data;
-        vkMapMemory(gDevice, stagingBufferMemory, 0, bufferSize, 0, &data);
-        assert(data);
-        memcpy(data, indices.data(), (size_t)bufferSize);
-        vkUnmapMemory(gDevice, stagingBufferMemory);
-
-        // device local buffer
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gIndexBuffer, gIndexBufferMemory);
-
-        // copy index buffer from host visible to device local
-        copyBuffer(stagingBuffer, gIndexBuffer, size);
-    }
 
     // create command buffer
     gCmdBufferLen = gSwapchainLength;

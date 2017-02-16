@@ -47,7 +47,7 @@
     <ClCompile>
       <CppLanguageStandard>gnu++11</CppLanguageStandard>
       <PreprocessorDefinitions>DISABLE_IMPORTGL;VK_USE_PLATFORM_ANDROID_KHR</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)jni\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>android;EGL;GLESv1_CM</AdditionalDependencies>
@@ -64,7 +64,7 @@ compileShaders.cmd</PreBuildCommand>
     <ClCompile>
       <CppLanguageStandard>gnu++11</CppLanguageStandard>
       <PreprocessorDefinitions>DISABLE_IMPORTGL</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)jni\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>android;EGL;GLESv1_CM</AdditionalDependencies>
@@ -81,7 +81,7 @@ compileShaders.cmd</PreBuildCommand>
     <ClCompile>
       <CppLanguageStandard>gnu++11</CppLanguageStandard>
       <PreprocessorDefinitions>DISABLE_IMPORTGL</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)jni\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>android;EGL;GLESv1_CM</AdditionalDependencies>
@@ -104,6 +104,7 @@ compileShaders.cmd</PreBuildCommand>
     <ClCompile Include="native_app_glue\android_native_app_glue.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="jni\ext\stb_image.h" />
     <ClInclude Include="jni\mathfu\constants.h" />
     <ClInclude Include="jni\mathfu\glsl_mappings.h" />
     <ClInclude Include="jni\mathfu\matrix.h" />
@@ -125,6 +126,9 @@ compileShaders.cmd</PreBuildCommand>
     <CustomBuild Include="assets\shader.vert">
       <FileType>Document</FileType>
     </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="assets\texture.jpg" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
