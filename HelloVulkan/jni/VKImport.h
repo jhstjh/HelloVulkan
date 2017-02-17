@@ -61,5 +61,6 @@ VK_IMPORT(vkGetImageSubresourceLayout);
 VK_IMPORT(vkCmdPipelineBarrier);
 VK_IMPORT(vkCmdCopyImage);
 VK_IMPORT(vkCreateSampler);
+VK_IMPORT(vkGetPhysicalDeviceFormatProperties)
 
 #undef VK_IMPORT
