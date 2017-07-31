@@ -32,6 +32,8 @@
 #include <cstdint>
 #include <array>
 #include <chrono>
+#include <streambuf>
+#include <istream>
 
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
@@ -43,6 +45,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
+
 using namespace mathfu;
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "native-activity", __VA_ARGS__))
@@ -52,6 +57,19 @@ using namespace mathfu;
 
 #define ASSERT_VK_SUCCESS(result) assert(result == VK_SUCCESS)
 
+const int WIDTH = 800;
+const int HEIGHT = 600;
+
+const std::string MODEL_PATH = "models/chalet.obj";
+const std::string TEXTURE_PATH = "textures/chalet.jpg";
+
+template<typename CharT, typename TraitsT = std::char_traits<CharT> >
+class vectorwrapbuf : public std::basic_streambuf<CharT, TraitsT> {
+public:
+    vectorwrapbuf(std::vector<CharT> &vec) {
+        this->setg(vec.data(), vec.data(), vec.data() + vec.size());
+    }
+};
 
 typedef PFN_vkVoidFunction(VKAPI_CALL * PFN_vkGetProcAddressNV) (const char *name);
 static PFN_vkGetInstanceProcAddr android_getVkProc = NULL;
@@ -145,22 +163,8 @@ struct Vertex
     }
 };
 
-const std::vector<Vertex> vertices = {
-    { { -0.5f, -0.5f, 0.0f },{ 1.0f, 0.0f, 0.0f },{ 0.0f, 0.0f } },
-    { { 0.5f, -0.5f, 0.0f },{ 0.0f, 1.0f, 0.0f },{ 1.0f, 0.0f } },
-    { { 0.5f, 0.5f, 0.0f },{ 0.0f, 0.0f, 1.0f },{ 1.0f, 1.0f } },
-    { { -0.5f, 0.5f, 0.0f },{ 1.0f, 1.0f, 1.0f },{ 0.0f, 1.0f } },
-
-    { { -0.5f, -0.5f, -0.5f },{ 1.0f, 0.0f, 0.0f },{ 0.0f, 0.0f } },
-    { { 0.5f, -0.5f, -0.5f },{ 0.0f, 1.0f, 0.0f },{ 1.0f, 0.0f } },
-    { { 0.5f, 0.5f, -0.5f },{ 0.0f, 0.0f, 1.0f },{ 1.0f, 1.0f } },
-    { { -0.5f, 0.5f, -0.5f },{ 1.0f, 1.0f, 1.0f },{ 0.0f, 1.0f } }
-};
-
-const std::vector<uint16_t> indices = {
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
-};
+std::vector<Vertex> vertices;
+std::vector<uint32_t> indices;
 
 struct UniformBufferObject
 {
@@ -873,7 +877,7 @@ static int engine_init_display(struct engine* engine) {
     // create texture image
     {
         int32_t texWidth, texHeight, texChannels;
-        AAsset* texFile = AAssetManager_open(assetManager, "texture.jpg", AASSET_MODE_UNKNOWN);
+        AAsset* texFile = AAssetManager_open(assetManager, TEXTURE_PATH.c_str(), AASSET_MODE_UNKNOWN);
         assert(texFile);
         auto size = AAsset_getLength(texFile);
         std::vector<uint8_t> texData(size);
@@ -961,6 +965,54 @@ static int engine_init_display(struct engine* engine) {
         auto result = vkCreateSampler(gDevice, &samplerInfo, nullptr, &gTextureSampler);
         ASSERT_VK_SUCCESS(result);
     }
+
+    // Load Model
+    {
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string err;
+
+        AAsset* obj = AAssetManager_open(assetManager, MODEL_PATH.c_str(), AASSET_MODE_UNKNOWN);
+        assert(obj);
+        size = AAsset_getLength(obj);
+        std::vector<char> objData(size);
+        AAsset_read(obj, objData.data(), size);
+        AAsset_close(obj);
+
+        vectorwrapbuf<char> databuf(objData);
+        std::istream is(&databuf);
+
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &err, &is))
+        {
+            assert(false);
+        }
+
+        for (const auto& shape : shapes)
+        {
+            for (const auto& index : shape.mesh.indices)
+            {
+                Vertex vertex = {};
+
+                vertex.pos = {
+                    attrib.vertices[3 * index.vertex_index + 0],
+                    attrib.vertices[3 * index.vertex_index + 2],
+                    attrib.vertices[3 * index.vertex_index + 1]
+                };
+
+                vertex.texCoord = {
+                    attrib.texcoords[2 * index.texcoord_index + 0],
+                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                };
+
+                vertex.color = { 1.0f, 1.0f, 1.0f };
+
+                vertices.push_back(vertex);
+                indices.push_back(indices.size());
+            }
+        }
+    }
+
 
     // create vertex buffer
     {
@@ -1327,7 +1379,7 @@ static int engine_init_display(struct engine* engine) {
         VkBuffer vertexBuffers[] = { gVertexBuffer };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(gCmdBuffer[bufferIndex], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(gCmdBuffer[bufferIndex], gIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(gCmdBuffer[bufferIndex], gIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdBindDescriptorSets(gCmdBuffer[bufferIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, gPLayout, 0, 1, &gDescriptorSet, 0, nullptr);
 
         vkCmdDrawIndexed(gCmdBuffer[bufferIndex], indices.size(), 1, 0, 0, 0);
@@ -1476,7 +1528,7 @@ void update()
     float time = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count() / 1000.0f;
 
     UniformBufferObject ubo = {};
-    auto rotMat = Matrix<float, 3>::RotationZ(time * 90.f / 180.f * 3.1415926);
+    auto rotMat = Matrix<float, 3>::RotationY(time * 90.f / 180.f * 3.1415926);
     ubo.model = mat4::FromRotationMatrix(rotMat);
     ubo.view = mat4::LookAt(vec3(0.0f, 0.0f, 0.0f), vec3(2.0f, 2.0f, 2.0f), vec3(0.0f, 1.0f, 0.0f), 1.0f);
     ubo.proj = mat4::Perspective((45.0f) / 180.f * 3.1415926, (float)gDisplaySize.width / (float)gDisplaySize.height, 0.1f, 10.0f);
