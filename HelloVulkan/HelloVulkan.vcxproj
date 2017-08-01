@@ -101,9 +101,11 @@ compileShaders.cmd</PreBuildCommand>
   <ItemGroup>
     <ClCompile Include="jni\main.cpp" />
     <ClCompile Include="jni\VKFuncs.cpp" />
+    <ClCompile Include="jni\VKRenderer.cpp" />
     <ClCompile Include="native_app_glue\android_native_app_glue.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="jni\engine.h" />
     <ClInclude Include="jni\ext\stb_image.h" />
     <ClInclude Include="jni\mathfu\constants.h" />
     <ClInclude Include="jni\mathfu\glsl_mappings.h" />
@@ -117,6 +119,7 @@ compileShaders.cmd</PreBuildCommand>
     <ClInclude Include="jni\mathfu\vector_4.h" />
     <ClInclude Include="jni\VKFuncs.h" />
     <ClInclude Include="jni\VKImport.h" />
+    <ClInclude Include="jni\VKRenderer.h" />
     <ClInclude Include="native_app_glue\android_native_app_glue.h" />
   </ItemGroup>
   <ItemGroup>

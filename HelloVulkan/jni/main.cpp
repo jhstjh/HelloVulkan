@@ -19,13 +19,6 @@
 #include <jni.h>
 #include <errno.h>
 
-#include <EGL/egl.h>
-#include <GLES/gl.h>
-
-#include <android/sensor.h>
-#include <android/log.h>
-#include "../native_app_glue/android_native_app_glue.h"
-
 #include <dlfcn.h>
 #include <assert.h>
 #include <vector>
@@ -35,10 +28,12 @@
 #include <streambuf>
 #include <istream>
 
+#include "engine.h"
+
+#include "VKRenderer.h"
+
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
-
-#include "VKFuncs.h"
 
 #include "mathfu/glsl_mappings.h"
 
@@ -49,9 +44,6 @@
 #include "tiny_obj_loader.h"
 
 using namespace mathfu;
-
-#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "native-activity", __VA_ARGS__))
-#define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "native-activity", __VA_ARGS__))
 
 #define LOG_ACCELEROMETER false
 
@@ -71,29 +63,9 @@ public:
     }
 };
 
-typedef PFN_vkVoidFunction(VKAPI_CALL * PFN_vkGetProcAddressNV) (const char *name);
-static PFN_vkGetInstanceProcAddr android_getVkProc = NULL;
+#if 1
 
-static VkInstance getVkProcInstance = NULL;
-static void* vulkan_so = NULL;
-
-VkInstance          _instance;
-VkSurfaceKHR        gSurface;
-VkPhysicalDevice    gPhysicalDevice;
-VkDevice            gDevice;
-VkQueue             gQueue;
-
-VkSwapchainKHR      gSwapchain;
-uint32_t            gSwapchainLength;
-
-VkExtent2D          gDisplaySize;
-VkFormat            gDisplayFormat;
-
-// array of frame buffers and views
-std::vector<VkFramebuffer>      gFramebuffers;
-std::vector<VkImageView>        gDisplayViews;
-
-VkRenderPass        gRenderPass;
+VkRenderPass        m;
 VkCommandPool       gCmdPool;
 std::vector<VkCommandBuffer>    gCmdBuffer;
 VkBuffer            gVertexBuffer;
@@ -126,6 +98,8 @@ VkPipelineCache   gPCache;
 VkPipeline        gPipeline;
 
 bool init = false;
+
+#endif
 
 struct Vertex
 {
@@ -173,40 +147,7 @@ struct UniformBufferObject
     mat4 proj;
 };
 
-
-/**
- * Our saved state data.
- */
-struct saved_state {
-    float angle;
-    int32_t x;
-    int32_t y;
-};
-
-/**
- * Shared state for our app.
- */
-struct engine {
-    struct android_app* app;
-
-    ASensorManager* sensorManager;
-    const ASensor* accelerometerSensor;
-    ASensorEventQueue* sensorEventQueue;
-
-    int animating;
-    EGLDisplay display;
-    EGLSurface surface;
-    EGLContext context;
-    int32_t width;
-    int32_t height;
-    struct saved_state state;
-};
-
-static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType, uint64_t obj, size_t location, int32_t code, const char* layerPrefix, const char* msg, void* userData) {
-    LOGW("validation layer: %s\n", msg);
-    return VK_FALSE;
-}
-
+#if 0
 void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiliting, VkImageUsageFlags usage,
     VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory & imageMemory)
 {
@@ -226,11 +167,11 @@ void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.flags = 0;
 
-    auto result = vkCreateImage(gDevice, &imageInfo, nullptr, &image);
+    auto result = vkCreateImage(VKRenderer::getInstance().getDevice(), &imageInfo, nullptr, &image);
     ASSERT_VK_SUCCESS(result);
 
     VkMemoryRequirements memRequirements;
-    vkGetImageMemoryRequirements(gDevice, image, &memRequirements);
+    vkGetImageMemoryRequirements(VKRenderer::getInstance().getDevice(), image, &memRequirements);
 
     VkMemoryAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -249,10 +190,10 @@ void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling
     assert(memoryTypeIndex != memProperties.memoryTypeCount);
 
     allocInfo.memoryTypeIndex = memoryTypeIndex;
-    result = vkAllocateMemory(gDevice, &allocInfo, nullptr, &imageMemory);
+    result = vkAllocateMemory(VKRenderer::getInstance().getDevice(), &allocInfo, nullptr, &imageMemory);
     ASSERT_VK_SUCCESS(result);
 
-    result = vkBindImageMemory(gDevice, image, imageMemory, 0);
+    result = vkBindImageMemory(VKRenderer::getInstance().getDevice(), image, imageMemory, 0);
     ASSERT_VK_SUCCESS(result);
 }
 
@@ -265,7 +206,7 @@ VkCommandBuffer beginSingleTimeCommands()
     allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(gDevice, &allocInfo, &commandBuffer);
+    vkAllocateCommandBuffers(VKRenderer::getInstance().getDevice(), &allocInfo, &commandBuffer);
 
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -288,7 +229,7 @@ void endSingleTimeCommands(VkCommandBuffer commandBuffer)
     vkQueueSubmit(gQueue, 1, &submitInfo, VK_NULL_HANDLE);
     vkQueueWaitIdle(gQueue);
 
-    vkFreeCommandBuffers(gDevice, gCmdPool, 1, &commandBuffer);
+    vkFreeCommandBuffers(VKRenderer::getInstance().getDevice(), gCmdPool, 1, &commandBuffer);
 }
 
 void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
@@ -404,7 +345,7 @@ void createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFl
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount = 1;
 
-    auto result = vkCreateImageView(gDevice, &viewInfo, nullptr, &imageView);
+    auto result = vkCreateImageView(VKRenderer::getInstance().getDevice(), &viewInfo, nullptr, &imageView);
     ASSERT_VK_SUCCESS(result);
 }
 
@@ -437,417 +378,16 @@ VkFormat findDepthFormat()
     );
 }
 
+#endif
 
 /**
  * Initialize an EGL context for the current display.
  */
 static int engine_init_display(struct engine* engine) {
 
-    AAssetManager* assetManager = engine->app->activity->assetManager;
-    off_t size;
+    VKRenderer::create(engine);
 
-    loadVKLibs();
-    loadVKFuncs();
-
-    VkResult result = VK_ERROR_INITIALIZATION_FAILED;
-
-    // Init instance
-    VkApplicationInfo applicationInfo = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
-    applicationInfo.pApplicationName = "JS";
-    applicationInfo.applicationVersion = 1;
-    applicationInfo.pEngineName = "GameWorks SDK Sample";
-    applicationInfo.engineVersion = 1;
-
-    // instance layers and extensions
-    uint32_t count = 0;
-    result = vkEnumerateInstanceLayerProperties(&count, NULL);
-    assert(result == VK_SUCCESS);
-
-    std::vector<VkLayerProperties> layers(count);
-    result = vkEnumerateInstanceLayerProperties(&count, layers.data());
-    assert(result == VK_SUCCESS);
-
-    result = vkEnumerateInstanceExtensionProperties(NULL, &count, NULL);
-    assert(result == VK_SUCCESS);
-
-    std::vector<VkExtensionProperties> extensions(count);
-
-    result = vkEnumerateInstanceExtensionProperties(NULL, &count, extensions.data());
-    assert(result == VK_SUCCESS);
-
-    std::vector<const char*> extNames;
-    for (auto& extension : extensions)
-    {
-        extNames.push_back(extension.extensionName);
-    }
-
-    std::vector<const char*> layerNames;
-    for (auto& layer : layers)
-    {
-        layerNames.push_back(layer.layerName);
-    }
-
-    const char *instance_layers[] = {
-        "VK_LAYER_GOOGLE_threading",
-        "VK_LAYER_LUNARG_parameter_validation",
-        "VK_LAYER_LUNARG_object_tracker",
-        "VK_LAYER_LUNARG_core_validation",
-        "VK_LAYER_LUNARG_image",
-        "VK_LAYER_LUNARG_swapchain",
-        "VK_LAYER_GOOGLE_unique_objects"
-    };
-
-    uint32_t instance_layer_request_count =
-        sizeof(instance_layers) / sizeof(instance_layers[0]);
-    for (uint32_t i = 0; i < instance_layer_request_count; i++) {
-        bool found = false;
-        for (uint32_t j = 0; j < layers.size(); j++) {
-            if (strcmp(instance_layers[i], layerNames[j]) == 0) {
-                found = true;
-            }
-        }
-        if (!found) {
-            assert(0);
-        }
-    }
-
-    VkInstanceCreateInfo instanceCreateInfo = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
-    instanceCreateInfo.pApplicationInfo = &applicationInfo;
-    instanceCreateInfo.enabledExtensionCount = extNames.size();
-    instanceCreateInfo.ppEnabledExtensionNames = extNames.data();
-    instanceCreateInfo.enabledLayerCount = layerNames.size();
-    instanceCreateInfo.ppEnabledLayerNames = layerNames.data();
-
-    result = vkCreateInstance(&instanceCreateInfo, NULL, &_instance);
-    assert(result == VK_SUCCESS);
-
-    assert(_instance);
-    getVkProcInstance = _instance;
-
-    // Init device
-    uint32_t gpuCount = 0;
-    result = vkEnumeratePhysicalDevices(getVkProcInstance, &gpuCount, nullptr);
-    assert(result == VK_SUCCESS);
-
-    std::vector<VkPhysicalDevice> devices;
-    devices.resize(gpuCount);
-
-    result = vkEnumeratePhysicalDevices(getVkProcInstance, &gpuCount, devices.data());
-    assert(result == VK_SUCCESS);
-
-    gPhysicalDevice = devices[0];
-
-    // Setup debug callback
-    VkDebugReportCallbackCreateInfoEXT debugReportCallbackCreateInfo = {};
-    debugReportCallbackCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-    debugReportCallbackCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
-    debugReportCallbackCreateInfo.pfnCallback = debugCallback;
-
-    PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT =
-        reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(
-            loadFuncFromValidationLib("vkCreateDebugReportCallbackEXT"));
-
-    VkDebugReportCallbackEXT debugReportCallback;
-    result = vkCreateDebugReportCallbackEXT(getVkProcInstance, &debugReportCallbackCreateInfo, nullptr, &debugReportCallback);
-    assert(result == VK_SUCCESS);
-
-    // physical device layers and extensions
-    result = vkEnumerateDeviceLayerProperties(gPhysicalDevice, &count, NULL);
-    assert(result == VK_SUCCESS);
-
-    std::vector<VkLayerProperties> deviceLayers(count);
-
-    result = vkEnumerateDeviceLayerProperties(gPhysicalDevice, &count, deviceLayers.data());
-    assert(result == VK_SUCCESS);
-
-    result = vkEnumerateDeviceExtensionProperties(gPhysicalDevice, NULL, &count, NULL);
-    assert(result == VK_SUCCESS);
-
-    std::vector<VkExtensionProperties> deviceExtensions(count);
-
-    result = vkEnumerateDeviceExtensionProperties(gPhysicalDevice, NULL, &count, deviceExtensions.data());
-    assert(result == VK_SUCCESS);
-
-    std::vector<const char*> deviceExtNames;
-    for (auto& dextension : deviceExtensions)
-    {
-        deviceExtNames.push_back(dextension.extensionName);
-    }
-
-    std::vector<const char*> deviceLayerNames;
-    for (auto& dlayer : deviceLayers)
-    {
-        deviceLayerNames.push_back(dlayer.layerName);
-    }
-
-    // init surface
-    VkAndroidSurfaceCreateInfoKHR createInfo = { VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR };
-    createInfo.window = engine->app->window;
-
-    result = vkCreateAndroidSurfaceKHR(getVkProcInstance, &createInfo, nullptr, &gSurface);
-    assert(result == VK_SUCCESS);
-
-    VkDeviceQueueCreateInfo queueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
-    queueCreateInfo.queueFamilyIndex = 0;
-    queueCreateInfo.queueCount = 1;
-    float queuePriority = 1.0f;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
-
-    VkDeviceCreateInfo deviceCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
-    deviceCreateInfo.queueCreateInfoCount = 1;
-    deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
-    deviceCreateInfo.enabledExtensionCount = deviceExtNames.size();
-    deviceCreateInfo.ppEnabledExtensionNames = deviceExtNames.data();
-    deviceCreateInfo.enabledLayerCount = deviceLayerNames.size();
-    deviceCreateInfo.ppEnabledLayerNames = deviceLayerNames.data();
-
-
-    // find queue family
-    uint32_t graphicsFamilyIdx = 0;
-    uint32_t presentFamilyIdx = 0;
-
-    uint32_t queueFamilyCount = 0;
-
-    vkGetPhysicalDeviceQueueFamilyProperties(gPhysicalDevice, &queueFamilyCount, nullptr);
-
-    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(gPhysicalDevice, &queueFamilyCount, queueFamilies.data());
-
-    uint32_t i = 0;
-    for (const auto& queueFamily : queueFamilies) {
-        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-            graphicsFamilyIdx = i;
-        }
-
-        VkBool32 presentSupport = false;
-        result = vkGetPhysicalDeviceSurfaceSupportKHR(gPhysicalDevice, i, gSurface, &presentSupport);
-        assert(result == VK_SUCCESS);
-
-        if (queueFamily.queueCount > 0 && presentSupport) {
-            presentFamilyIdx = i;
-        }
-
-        i++;
-    }
-
-    uint32_t queueFamilyIndices[] = { graphicsFamilyIdx, presentFamilyIdx };
-
-    // create device
-    result = vkCreateDevice(gPhysicalDevice, &deviceCreateInfo, nullptr, &gDevice);
-    assert(result == VK_SUCCESS);
-
-    vkGetDeviceQueue(gDevice, 0, 0, &gQueue);
-
-    // create swap chain
-    VkSurfaceCapabilitiesKHR surfaceCapabilities;
-    result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gPhysicalDevice, gSurface,
-        &surfaceCapabilities);
-    assert(result == VK_SUCCESS);
-
-    uint32_t formatCount = 0;
-    result = vkGetPhysicalDeviceSurfaceFormatsKHR(gPhysicalDevice, gSurface, &formatCount, nullptr);
-    assert(result == VK_SUCCESS);
-
-    std::vector<VkSurfaceFormatKHR> formats(formatCount);
-    result = vkGetPhysicalDeviceSurfaceFormatsKHR(gPhysicalDevice, gSurface, &formatCount, formats.data());
-    assert(result == VK_SUCCESS);
-
-    uint32_t chosenFormat;
-    for (chosenFormat = 0; chosenFormat < formatCount; chosenFormat++) {
-        if (formats[chosenFormat].format == VK_FORMAT_R8G8B8A8_UNORM)
-            break;
-    }
-    assert(chosenFormat < formatCount);
-
-    gDisplaySize = surfaceCapabilities.currentExtent;
-    gDisplayFormat = formats[chosenFormat].format;
-
-
-    // create swapchain
-    VkSwapchainCreateInfoKHR swapchainCreateInfo = {};
-    swapchainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    swapchainCreateInfo.pNext = nullptr;
-    swapchainCreateInfo.surface = gSurface;
-    swapchainCreateInfo.minImageCount = surfaceCapabilities.minImageCount;
-    swapchainCreateInfo.imageFormat = formats[chosenFormat].format;
-    swapchainCreateInfo.imageColorSpace = formats[chosenFormat].colorSpace;
-    swapchainCreateInfo.imageExtent = surfaceCapabilities.currentExtent;
-    swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    swapchainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    swapchainCreateInfo.imageArrayLayers = 1;
-    swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    swapchainCreateInfo.queueFamilyIndexCount = 2;
-    swapchainCreateInfo.pQueueFamilyIndices = queueFamilyIndices;
-    swapchainCreateInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
-    swapchainCreateInfo.clipped = VK_FALSE;
-    swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
-
-    result = vkCreateSwapchainKHR(gDevice, &swapchainCreateInfo,
-        nullptr, &gSwapchain);
-    assert(result == VK_SUCCESS);
-
-    result = vkGetSwapchainImagesKHR(gDevice, gSwapchain,
-        &gSwapchainLength, nullptr);
-    assert(result == VK_SUCCESS);
-    
-    // create render pass
-    VkAttachmentDescription attachmentDescriptions;
-    attachmentDescriptions.format = gDisplayFormat;
-    attachmentDescriptions.samples = VK_SAMPLE_COUNT_1_BIT;
-    attachmentDescriptions.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachmentDescriptions.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachmentDescriptions.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachmentDescriptions.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachmentDescriptions.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachmentDescriptions.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference colorReference;
-    colorReference.attachment = 0;
-    colorReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentDescription depthAttachment = {};
-    depthAttachment.format = findDepthFormat();
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference depthAttachmentRef = {};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpassDescription = {};
-    subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpassDescription.colorAttachmentCount = 1;
-    subpassDescription.pColorAttachments = &colorReference;
-    subpassDescription.pDepthStencilAttachment = &depthAttachmentRef;
-
-    VkSubpassDependency dependency = {};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-
-    std::array<VkAttachmentDescription, 2> attachments = { attachmentDescriptions, depthAttachment };
-
-    VkRenderPassCreateInfo renderPassCreateInfo;
-    renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassCreateInfo.pNext = nullptr;
-    renderPassCreateInfo.attachmentCount = attachments.size();
-    renderPassCreateInfo.pAttachments = attachments.data();
-    renderPassCreateInfo.subpassCount = 1;
-    renderPassCreateInfo.pSubpasses = &subpassDescription;
-    renderPassCreateInfo.dependencyCount = 1;
-    renderPassCreateInfo.pDependencies = &dependency;
-
-    result = vkCreateRenderPass(gDevice, &renderPassCreateInfo,
-        nullptr, &gRenderPass);
-    assert(result == VK_SUCCESS);
-
-    // create command pool
-    VkCommandPoolCreateInfo cmdPoolCreateInfo;
-    cmdPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    cmdPoolCreateInfo.pNext = nullptr;
-    cmdPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    cmdPoolCreateInfo.queueFamilyIndex = 0;
-
-    result = vkCreateCommandPool(gDevice, &cmdPoolCreateInfo, nullptr, &gCmdPool);
-    assert(result == VK_SUCCESS);
-
-    // create depth resource
-    {
-        VkFormat depthFormat = findDepthFormat();
-
-        createImage(gDisplaySize.width, gDisplaySize.height, depthFormat, VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gDepthImage, gDepthImageMemory);
-        createImageView(gDepthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, gDepthImageView);
-
-        transitionImageLayout(gDepthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-    }
-
-    // create framebuffer
-    uint32_t SwapchainImagesCount = 0;
-    result = vkGetSwapchainImagesKHR(gDevice, gSwapchain, &SwapchainImagesCount, nullptr);
-    assert(result == VK_SUCCESS);
-
-    std::vector<VkImage> displayImages(SwapchainImagesCount);
-    result = vkGetSwapchainImagesKHR(gDevice, gSwapchain, &SwapchainImagesCount, displayImages.data());
-    assert(result == VK_SUCCESS);
-
-    gDisplayViews.resize(SwapchainImagesCount);
-    for (uint32_t i = 0; i < SwapchainImagesCount; i++)
-    {
-        createImageView(displayImages[i], gDisplayFormat, VK_IMAGE_ASPECT_COLOR_BIT, gDisplayViews[i]);
-    }
-
-    gFramebuffers.resize(gSwapchainLength);
-    for (uint32_t i = 0; i < gSwapchainLength; i++)
-    {
-        std::array<VkImageView, 2> attachments =
-        {
-            gDisplayViews[i],
-            gDepthImageView
-        };
-
-        VkFramebufferCreateInfo fbCreateInfo = {};
-        fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        fbCreateInfo.renderPass = gRenderPass;
-        fbCreateInfo.layers = 1;
-        fbCreateInfo.attachmentCount = attachments.size();
-        fbCreateInfo.pAttachments = attachments.data();
-        fbCreateInfo.width = static_cast<uint32_t>(gDisplaySize.width);
-        fbCreateInfo.height = static_cast<uint32_t>(gDisplaySize.height);
-
-        result = vkCreateFramebuffer(gDevice, &fbCreateInfo, nullptr,
-            &gFramebuffers[i]);
-        assert(result == VK_SUCCESS);
-    }
-
-    // create buffer lambda
-    auto createBuffer = [](VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
-    {
-        VkBufferCreateInfo bufferInfo = {};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = size;
-        bufferInfo.usage = usage;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        auto result = vkCreateBuffer(gDevice, &bufferInfo, nullptr, &buffer);
-        assert(result == VK_SUCCESS);
-
-        VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(gDevice, buffer, &memRequirements);
-
-        VkPhysicalDeviceMemoryProperties memProperties;
-        vkGetPhysicalDeviceMemoryProperties(gPhysicalDevice, &memProperties);
-
-        uint32_t memoryTypeIndex;
-        for (memoryTypeIndex = 0; memoryTypeIndex < memProperties.memoryTypeCount; memoryTypeIndex++) {
-            if ((memRequirements.memoryTypeBits & (1 << memoryTypeIndex)) && (memProperties.memoryTypes[memoryTypeIndex].propertyFlags & properties) == properties)
-            {
-                break;
-            }
-        }
-        assert(memoryTypeIndex != memProperties.memoryTypeCount);
-
-        VkMemoryAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = memoryTypeIndex;
-
-        result = vkAllocateMemory(gDevice, &allocInfo, nullptr, &bufferMemory);
-        assert(result == VK_SUCCESS);
-
-        vkBindBufferMemory(gDevice, buffer, bufferMemory, 0);
-    };
+    auto assetManager = engine->app->activity->assetManager;
 
     // create descriptor set layout
     VkDescriptorSetLayoutBinding uboLayoutBinding = {};
@@ -871,8 +411,9 @@ static int engine_init_display(struct engine* engine) {
     layoutInfo.bindingCount = bindings.size();
     layoutInfo.pBindings = bindings.data();
 
-    result = vkCreateDescriptorSetLayout(gDevice, &layoutInfo, nullptr, &gDescriptorSetLayout);
+    auto result = vkCreateDescriptorSetLayout(VKRenderer::getInstance().getDevice(), &layoutInfo, nullptr, &gDescriptorSetLayout);
     assert(result == VK_SUCCESS);
+
 
     // create texture image
     {
@@ -889,11 +430,11 @@ static int engine_init_display(struct engine* engine) {
 
         assert(pixels);
 
-        createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        VKRenderer::getInstance().createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, gStagingImage, gStagingImageMemory);
 
         void* data;
-        vkMapMemory(gDevice, gStagingImageMemory, 0, imageSize, 0, &data);
+        vkMapMemory(VKRenderer::getInstance().getDevice(), gStagingImageMemory, 0, imageSize, 0, &data);
         assert(data);
 
         VkImageSubresource subresource = {};
@@ -902,7 +443,7 @@ static int engine_init_display(struct engine* engine) {
         subresource.arrayLayer = 0;
 
         VkSubresourceLayout stagingImageLayout;
-        vkGetImageSubresourceLayout(gDevice, gStagingImage, &subresource, &stagingImageLayout);
+        vkGetImageSubresourceLayout(VKRenderer::getInstance().getDevice(), gStagingImage, &subresource, &stagingImageLayout);
 
         if (stagingImageLayout.rowPitch = texWidth * 4)
         {
@@ -922,24 +463,24 @@ static int engine_init_display(struct engine* engine) {
             }
         }
 
-        vkUnmapMemory(gDevice, gStagingImageMemory);
+        vkUnmapMemory(VKRenderer::getInstance().getDevice(), gStagingImageMemory);
         stbi_image_free(pixels);
 
-        createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+        VKRenderer::getInstance().createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             gTextureImage, gTextureImageMemory);
 
-        transitionImageLayout(gStagingImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-        transitionImageLayout(gTextureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        VKRenderer::getInstance().transitionImageLayout(gStagingImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        VKRenderer::getInstance().transitionImageLayout(gTextureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-        copyImage(gStagingImage, gTextureImage, texWidth, texHeight);
+        VKRenderer::getInstance().copyImage(gStagingImage, gTextureImage, texWidth, texHeight);
 
-        transitionImageLayout(gTextureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        VKRenderer::getInstance().transitionImageLayout(gTextureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
 
     // create texture image view
     {
-        createImageView(gTextureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, gTextureImageView);
+        VKRenderer::getInstance().createImageView(gTextureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, gTextureImageView);
     }
 
     // create texture sampler
@@ -962,7 +503,7 @@ static int engine_init_display(struct engine* engine) {
         samplerInfo.minLod = 0.f;
         samplerInfo.maxLod = 0.f;
 
-        auto result = vkCreateSampler(gDevice, &samplerInfo, nullptr, &gTextureSampler);
+        auto result = vkCreateSampler(VKRenderer::getInstance().getDevice(), &samplerInfo, nullptr, &gTextureSampler);
         ASSERT_VK_SUCCESS(result);
     }
 
@@ -975,7 +516,7 @@ static int engine_init_display(struct engine* engine) {
 
         AAsset* obj = AAssetManager_open(assetManager, MODEL_PATH.c_str(), AASSET_MODE_UNKNOWN);
         assert(obj);
-        size = AAsset_getLength(obj);
+        auto size = AAsset_getLength(obj);
         std::vector<char> objData(size);
         AAsset_read(obj, objData.data(), size);
         AAsset_close(obj);
@@ -1022,19 +563,19 @@ static int engine_init_display(struct engine* engine) {
         VkBuffer            stagingBuffer;
         VkDeviceMemory      stagingBufferMemory;
 
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+        VKRenderer::getInstance().createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
         void* data;
-        vkMapMemory(gDevice, stagingBufferMemory, 0, bufferSize, 0, &data);
+        vkMapMemory(VKRenderer::getInstance().getDevice(), stagingBufferMemory, 0, bufferSize, 0, &data);
         assert(data);
         memcpy(data, vertices.data(), (size_t)bufferSize);
-        vkUnmapMemory(gDevice, stagingBufferMemory);
+        vkUnmapMemory(VKRenderer::getInstance().getDevice(), stagingBufferMemory);
 
         // device local buffer
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gVertexBuffer, gVertexBufferMemory);
+        VKRenderer::getInstance().createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gVertexBuffer, gVertexBufferMemory);
 
         // copy vertex buffer from host visible to device local
-        copyBuffer(stagingBuffer, gVertexBuffer, bufferSize);
+        VKRenderer::getInstance().copyBuffer(stagingBuffer, gVertexBuffer, bufferSize);
     }
 
     {
@@ -1045,27 +586,27 @@ static int engine_init_display(struct engine* engine) {
         VkBuffer            stagingBuffer;
         VkDeviceMemory      stagingBufferMemory;
 
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+        VKRenderer::getInstance().createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
         void* data;
-        vkMapMemory(gDevice, stagingBufferMemory, 0, bufferSize, 0, &data);
+        vkMapMemory(VKRenderer::getInstance().getDevice(), stagingBufferMemory, 0, bufferSize, 0, &data);
         assert(data);
         memcpy(data, indices.data(), (size_t)bufferSize);
-        vkUnmapMemory(gDevice, stagingBufferMemory);
+        vkUnmapMemory(VKRenderer::getInstance().getDevice(), stagingBufferMemory);
 
         // device local buffer
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gIndexBuffer, gIndexBufferMemory);
+        VKRenderer::getInstance().createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gIndexBuffer, gIndexBufferMemory);
 
         // copy index buffer from host visible to device local
-        copyBuffer(stagingBuffer, gIndexBuffer, bufferSize);
+        VKRenderer::getInstance().copyBuffer(stagingBuffer, gIndexBuffer, bufferSize);
     }
 
     // create uniform buffer
     {
         VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, gUniformStagingBuffer, gUniformStagingBufferMemory);
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gUniformBuffer, gUniformBufferMemory);
+        VKRenderer::getInstance().createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, gUniformStagingBuffer, gUniformStagingBufferMemory);
+        VKRenderer::getInstance().createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gUniformBuffer, gUniformBufferMemory);
     }
 
     // create descriptor pool
@@ -1081,7 +622,7 @@ static int engine_init_display(struct engine* engine) {
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = 1;
 
-    result = vkCreateDescriptorPool(gDevice, &poolInfo, nullptr, &gDescriptorPool);
+    result = vkCreateDescriptorPool(VKRenderer::getInstance().getDevice(), &poolInfo, nullptr, &gDescriptorPool);
     assert(result == VK_SUCCESS);
 
     // create descriptor set
@@ -1092,7 +633,7 @@ static int engine_init_display(struct engine* engine) {
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = uboLayouts;
 
-    result = vkAllocateDescriptorSets(gDevice, &allocInfo, &gDescriptorSet);
+    result = vkAllocateDescriptorSets(VKRenderer::getInstance().getDevice(), &allocInfo, &gDescriptorSet);
     assert(result == VK_SUCCESS);
 
     VkDescriptorBufferInfo bufferInfo = {};
@@ -1122,7 +663,7 @@ static int engine_init_display(struct engine* engine) {
     descriptorWrites[1].descriptorCount = 1;
     descriptorWrites[1].pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(gDevice, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+    vkUpdateDescriptorSets(VKRenderer::getInstance().getDevice(), descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
 
 
     // create graphics pipeline
@@ -1135,7 +676,7 @@ static int engine_init_display(struct engine* engine) {
     pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
     pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
 
-    result = vkCreatePipelineLayout(gDevice, &pipelineLayoutCreateInfo, nullptr, &gPLayout);
+    result = vkCreatePipelineLayout(VKRenderer::getInstance().getDevice(), &pipelineLayoutCreateInfo, nullptr, &gPLayout);
     assert(result == VK_SUCCESS);
 
     VkPipelineDynamicStateCreateInfo dynamicStateInfo;
@@ -1146,7 +687,7 @@ static int engine_init_display(struct engine* engine) {
 
     AAsset* vs = AAssetManager_open(assetManager, "vert.spv", AASSET_MODE_UNKNOWN);
     assert(vs);
-    size = AAsset_getLength(vs);
+    auto size = AAsset_getLength(vs);
     std::vector<uint8_t> vsData(size);
     AAsset_read(vs, vsData.data(), size);
     AAsset_close(vs);
@@ -1168,7 +709,7 @@ static int engine_init_display(struct engine* engine) {
     shaderModuleCreateInfo.flags = 0;
 
     result = vkCreateShaderModule(
-        gDevice, &shaderModuleCreateInfo, nullptr, &vertexShader);
+        VKRenderer::getInstance().getDevice(), &shaderModuleCreateInfo, nullptr, &vertexShader);
     assert(result == VK_SUCCESS);
 
     shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -1178,7 +719,7 @@ static int engine_init_display(struct engine* engine) {
     shaderModuleCreateInfo.flags = 0;
 
     result = vkCreateShaderModule(
-        gDevice, &shaderModuleCreateInfo, nullptr, &fragmentShader);
+        VKRenderer::getInstance().getDevice(), &shaderModuleCreateInfo, nullptr, &fragmentShader);
     assert(result == VK_SUCCESS);
 
     VkPipelineShaderStageCreateInfo shaderStages[2];
@@ -1199,16 +740,18 @@ static int engine_init_display(struct engine* engine) {
     shaderStages[1].flags = 0;
     shaderStages[1].pName = "main";
 
+    auto displaySize = VKRenderer::getInstance().getDisplaySize();
+
     VkViewport viewports;
     viewports.minDepth = 0.0f;
     viewports.maxDepth = 1.0f;
     viewports.x = 0;
     viewports.y = 0;
-    viewports.width = (float)gDisplaySize.width;
-    viewports.height = (float)gDisplaySize.height;
+    viewports.width = (float)displaySize.width;
+    viewports.height = (float)displaySize.height;
 
     VkRect2D scissor;
-    scissor.extent = gDisplaySize;
+    scissor.extent = displaySize;
     scissor.offset.x = 0;
     scissor.offset.y = 0;
 
@@ -1291,7 +834,7 @@ static int engine_init_display(struct engine* engine) {
     pipelineCacheInfo.pInitialData = nullptr;
     pipelineCacheInfo.flags = 0;
 
-    result = vkCreatePipelineCache(gDevice, &pipelineCacheInfo, nullptr, &gPCache);
+    result = vkCreatePipelineCache(VKRenderer::getInstance().getDevice(), &pipelineCacheInfo, nullptr, &gPCache);
     assert(result == VK_SUCCESS);
 
     VkPipelineDepthStencilStateCreateInfo depthStencil = {};
@@ -1322,28 +865,28 @@ static int engine_init_display(struct engine* engine) {
     pipelineCreateInfo.pColorBlendState = &colorBlendInfo;
     pipelineCreateInfo.pDynamicState = &dynamicStateInfo;
     pipelineCreateInfo.layout = gPLayout;
-    pipelineCreateInfo.renderPass = gRenderPass;
+    pipelineCreateInfo.renderPass = VKRenderer::getInstance().getRenderPass();
     pipelineCreateInfo.subpass = 0;
     pipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineCreateInfo.basePipelineIndex = 0;
 
-    result = vkCreateGraphicsPipelines(gDevice, gPCache, 1, &pipelineCreateInfo, nullptr, &gPipeline);
+    result = vkCreateGraphicsPipelines(VKRenderer::getInstance().getDevice(), gPCache, 1, &pipelineCreateInfo, nullptr, &gPipeline);
     assert(result == VK_SUCCESS);
 
     // create command buffer
-    gCmdBufferLen = gSwapchainLength;
-    gCmdBuffer.resize(gSwapchainLength);
+    gCmdBufferLen = VKRenderer::getInstance().getSwapChainLength();
+    gCmdBuffer.resize(gCmdBufferLen);
 
-    for (uint32_t bufferIndex = 0; bufferIndex < gSwapchainLength; bufferIndex++)
+    for (uint32_t bufferIndex = 0; bufferIndex < gCmdBufferLen; bufferIndex++)
     {
         VkCommandBufferAllocateInfo cmdBufferAllocationInfo;
         cmdBufferAllocationInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         cmdBufferAllocationInfo.pNext = nullptr;
-        cmdBufferAllocationInfo.commandPool = gCmdPool;
+        cmdBufferAllocationInfo.commandPool = VKRenderer::getInstance().getCommandPool();
         cmdBufferAllocationInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         cmdBufferAllocationInfo.commandBufferCount = 1;
 
-        result = vkAllocateCommandBuffers(gDevice, &cmdBufferAllocationInfo, &gCmdBuffer[bufferIndex]);
+        result = vkAllocateCommandBuffers(VKRenderer::getInstance().getDevice(), &cmdBufferAllocationInfo, &gCmdBuffer[bufferIndex]);
         assert(result == VK_SUCCESS);
 
 
@@ -1363,11 +906,11 @@ static int engine_init_display(struct engine* engine) {
         VkRenderPassBeginInfo renderPassBeginInfo;
         renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassBeginInfo.pNext = nullptr;
-        renderPassBeginInfo.renderPass = gRenderPass;
-        renderPassBeginInfo.framebuffer = gFramebuffers[bufferIndex];
+        renderPassBeginInfo.renderPass = VKRenderer::getInstance().getRenderPass();
+        renderPassBeginInfo.framebuffer = VKRenderer::getInstance().getFramebuffer(bufferIndex);
         renderPassBeginInfo.renderArea.offset.x = 0;
         renderPassBeginInfo.renderArea.offset.y = 0;
-        renderPassBeginInfo.renderArea.extent = gDisplaySize;
+        renderPassBeginInfo.renderArea.extent = displaySize;
         renderPassBeginInfo.clearValueCount = clearValues.size();
         renderPassBeginInfo.pClearValues = clearValues.data();
 
@@ -1394,10 +937,10 @@ static int engine_init_display(struct engine* engine) {
     semaphoreCreateInfo.pNext = nullptr;
     semaphoreCreateInfo.flags = 0;
 
-    result = vkCreateSemaphore(gDevice, &semaphoreCreateInfo, nullptr, &gimageAvailableSemaphore);
+    result = vkCreateSemaphore(VKRenderer::getInstance().getDevice(), &semaphoreCreateInfo, nullptr, &gimageAvailableSemaphore);
     assert(result == VK_SUCCESS);
 
-    result = vkCreateSemaphore(gDevice, &semaphoreCreateInfo, nullptr, &grenderFinishedSemaphore);
+    result = vkCreateSemaphore(VKRenderer::getInstance().getDevice(), &semaphoreCreateInfo, nullptr, &grenderFinishedSemaphore);
     assert(result == VK_SUCCESS);
 
     init = true;
@@ -1410,14 +953,13 @@ static int engine_init_display(struct engine* engine) {
  * Just the current frame in the display.
  */
 static void engine_draw_frame(struct engine* engine) {
-    
     if (!init)
         return;
 
     VkResult result;
 
     uint32_t nextIndex;
-    result = vkAcquireNextImageKHR(gDevice, gSwapchain, 0xFFFFFFFFFFFFFFFFull, gimageAvailableSemaphore, VK_NULL_HANDLE, &nextIndex);
+    result = vkAcquireNextImageKHR(VKRenderer::getInstance().getDevice(), VKRenderer::getInstance().getSwapChain(), 0xFFFFFFFFFFFFFFFFull, gimageAvailableSemaphore, VK_NULL_HANDLE, &nextIndex);
     assert(result == VK_SUCCESS);
 
     VkSemaphore signalSemaphores[] = { grenderFinishedSemaphore };
@@ -1433,31 +975,27 @@ static void engine_draw_frame(struct engine* engine) {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    result = vkQueueSubmit(gQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    result = vkQueueSubmit(VKRenderer::getInstance().getQueue(), 1, &submitInfo, VK_NULL_HANDLE);
     assert(result == VK_SUCCESS);
 
     VkPresentInfoKHR presentInfo = {};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.pNext = nullptr;
     presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &gSwapchain;
+    presentInfo.pSwapchains = &VKRenderer::getInstance().getSwapChain();
     presentInfo.pImageIndices = &nextIndex;
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signalSemaphores;
     presentInfo.pResults = &result;
 
-    vkQueuePresentKHR(gQueue, &presentInfo);
+    vkQueuePresentKHR(VKRenderer::getInstance().getQueue(), &presentInfo);
 }
 
 /**
  * Tear down the EGL context currently associated with the display.
  */
 static void engine_term_display(struct engine* engine) {
-    vkDestroySurfaceKHR(getVkProcInstance, gSurface, nullptr);
-    vkDestroyDevice(gDevice, nullptr);
-    vkDestroyInstance(getVkProcInstance, nullptr);
-
-    unloadVKLibs();
+    VKRenderer::getInstance().release();
 }
 
 /**
@@ -1522,25 +1060,28 @@ static void engine_handle_cmd(struct android_app* app, int32_t cmd) {
 
 void update()
 {
+#if 1
     static auto startTime = std::chrono::high_resolution_clock::now();
 
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count() / 1000.0f;
+    auto displaySize = VKRenderer::getInstance().getDisplaySize();
 
     UniformBufferObject ubo = {};
     auto rotMat = Matrix<float, 3>::RotationY(time * 90.f / 180.f * 3.1415926);
     ubo.model = mat4::FromRotationMatrix(rotMat);
     ubo.view = mat4::LookAt(vec3(0.0f, 0.0f, 0.0f), vec3(2.0f, 2.0f, 2.0f), vec3(0.0f, 1.0f, 0.0f), 1.0f);
-    ubo.proj = mat4::Perspective((45.0f) / 180.f * 3.1415926, (float)gDisplaySize.width / (float)gDisplaySize.height, 0.1f, 10.0f);
+    ubo.proj = mat4::Perspective((45.0f) / 180.f * 3.1415926, (float)displaySize.width / (float)displaySize.height, 0.1f, 10.0f);
     ubo.proj(1, 1) *= -1;
 
     void* data;
-    vkMapMemory(gDevice, gUniformStagingBufferMemory, 0, sizeof(ubo), 0, &data);
+    vkMapMemory(VKRenderer::getInstance().getDevice(), gUniformStagingBufferMemory, 0, sizeof(ubo), 0, &data);
     assert(data);
     memcpy(data, &ubo, sizeof(ubo));
-    vkUnmapMemory(gDevice, gUniformStagingBufferMemory);
+    vkUnmapMemory(VKRenderer::getInstance().getDevice(), gUniformStagingBufferMemory);
 
-    copyBuffer(gUniformStagingBuffer, gUniformBuffer, sizeof(ubo));
+    VKRenderer::getInstance().copyBuffer(gUniformStagingBuffer, gUniformBuffer, sizeof(ubo));
+#endif
 }
 
 /**

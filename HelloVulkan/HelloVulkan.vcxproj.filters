@@ -42,6 +42,9 @@
     <ClCompile Include="jni\VKFuncs.cpp">
       <Filter>jni</Filter>
     </ClCompile>
+    <ClCompile Include="jni\VKRenderer.cpp">
+      <Filter>jni</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="native_app_glue\android_native_app_glue.h">
@@ -84,6 +87,12 @@
       <Filter>jni\mathfu</Filter>
     </ClInclude>
     <ClInclude Include="jni\ext\stb_image.h">
+      <Filter>jni</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\VKRenderer.h">
+      <Filter>jni</Filter>
+    </ClInclude>
+    <ClInclude Include="jni\engine.h">
       <Filter>jni</Filter>
     </ClInclude>
   </ItemGroup>
