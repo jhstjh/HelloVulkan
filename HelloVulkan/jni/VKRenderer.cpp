@@ -6,8 +6,7 @@
 #include "engine.h"
 #include "VKFuncs.h"
 #include "VKRenderer.h"
-
-#define ASSERT_VK_SUCCESS(result) assert(result == VK_SUCCESS)
+#include "Model.h"
 
 namespace VK_RENDERER
 {
@@ -19,8 +18,25 @@ class VKRendererImpl : public VKRenderer
     }
 
 public:
-    VKRendererImpl(struct engine* engine)
+    VKRendererImpl()
     {
+
+    }
+
+    virtual ~VKRendererImpl()
+    {
+        delete mModel;
+        vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
+        vkDestroyDevice(mDevice, nullptr);
+        vkDestroyInstance(mInstance, nullptr);
+
+        unloadVKLibs();
+    }
+
+    void init(struct engine* engine) final
+    {
+        mEngine = engine;
+
         AAssetManager* assetManager = engine->app->activity->assetManager;
         off_t size;
 
@@ -387,15 +403,19 @@ public:
                 &mFramebuffers[i]);
             assert(result == VK_SUCCESS);
         }
-    }
 
-    virtual ~VKRendererImpl()
-    {
-        vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
-        vkDestroyDevice(mDevice, nullptr);
-        vkDestroyInstance(mInstance, nullptr);
+        VkSemaphoreCreateInfo semaphoreCreateInfo;
+        semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        semaphoreCreateInfo.pNext = nullptr;
+        semaphoreCreateInfo.flags = 0;
 
-        unloadVKLibs();
+        result = vkCreateSemaphore(VKRenderer::getInstance().getDevice(), &semaphoreCreateInfo, nullptr, &mImageAvailableSemaphore);
+        assert(result == VK_SUCCESS);
+
+        result = vkCreateSemaphore(VKRenderer::getInstance().getDevice(), &semaphoreCreateInfo, nullptr, &mRenderFinishedSemaphore);
+        assert(result == VK_SUCCESS);
+
+        mModel = new Model(mEngine);
     }
 
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiliting, VkImageUsageFlags usage,
@@ -668,7 +688,30 @@ public:
 
     void draw() final
     {
+        VkResult result;
 
+        uint32_t nextIndex;
+        result = vkAcquireNextImageKHR(mDevice, mSwapchain, 0xFFFFFFFFFFFFFFFFull, mImageAvailableSemaphore, VK_NULL_HANDLE, &nextIndex);
+        assert(result == VK_SUCCESS);
+
+        mModel->draw(mQueue, &mImageAvailableSemaphore, 1, &mRenderFinishedSemaphore, 1, nextIndex);
+
+        VkPresentInfoKHR presentInfo = {};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.pNext = nullptr;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &mSwapchain;
+        presentInfo.pImageIndices = &nextIndex;
+        presentInfo.waitSemaphoreCount = 0;
+        presentInfo.pWaitSemaphores = nullptr;
+        presentInfo.pResults = &result;
+
+        vkQueuePresentKHR(mQueue, &presentInfo);
+    }
+
+    void update() final
+    {
+        mModel->update();
     }
 
     VkDevice &getDevice() final
@@ -695,16 +738,6 @@ public:
     {
         assert(index < mFramebuffers.size());
         return mFramebuffers[index];
-    }
-
-    VkSwapchainKHR &getSwapChain()
-    {
-        return mSwapchain;
-    }
-
-    VkQueue &getQueue()
-    {
-        return mQueue;
     }
 
     VkRenderPass &getRenderPass()
@@ -743,44 +776,25 @@ public:
     VkRenderPass        mRenderPass;
     VkCommandPool       mCmdPool;
     std::vector<VkCommandBuffer>    mCmdBuffer;
-    VkBuffer            mVertexBuffer;
-    VkDeviceMemory      mVertexBufferMemory;
-    VkBuffer            mIndexBuffer;
-    VkDeviceMemory      mIndexBufferMemory;
-    VkBuffer            mUniformStagingBuffer;
-    VkDeviceMemory      mUniformStagingBufferMemory;
-    VkBuffer            mUniformBuffer;
-    VkDeviceMemory      mUniformBufferMemory;
-    VkDescriptorPool    mDescriptorPool;
-    VkDescriptorSet     mDescriptorSet;
-    VkImage             mStagingImage;
-    VkDeviceMemory      mStagingImageMemory;
-    VkImage             mTextureImage;
-    VkDeviceMemory      mTextureImageMemory;
-    VkImageView         mTextureImageView;
-    VkSampler           mTextureSampler;
     VkImage             mDepthImage;
     VkDeviceMemory      mDepthImageMemory;
     VkImageView         mDepthImageView;
 
-    uint32_t            mCmdBufferLen;
     VkSemaphore         mImageAvailableSemaphore;
     VkSemaphore         mRenderFinishedSemaphore;
 
-    VkDescriptorSetLayout mDescriptorSetLayout;
-    VkPipelineLayout  mPLayout;
-    VkPipelineCache   mPCache;
-    VkPipeline        mPipeline;
+    engine*           mEngine{ nullptr };
+    Model*            mModel{ nullptr };
 };
 
 }
 
 VKRenderer* VKRenderer::_instance = nullptr;
 
-void VKRenderer::create(struct engine* engine)
+void VKRenderer::create()
 {
     assert(_instance == nullptr);
-    _instance = static_cast<VKRenderer*>(new VK_RENDERER::VKRendererImpl(engine));
+    _instance = static_cast<VKRenderer*>(new VK_RENDERER::VKRendererImpl());
 }
 
 VKRenderer &VKRenderer::getInstance()

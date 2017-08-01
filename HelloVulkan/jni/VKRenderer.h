@@ -7,15 +7,15 @@ struct engine;
 class VKRenderer
 {
 public:
-    static void create(struct engine* engine);
+    static void create();
     static VKRenderer &getInstance();
+
+    virtual void init(struct engine* engine) = 0;
 
     virtual VkDevice &getDevice() = 0;
     virtual VkPhysicalDevice &getPhysicalDevice() = 0;
     virtual VkExtent2D &getDisplaySize() = 0;
     virtual VkFramebuffer &getFramebuffer(uint32_t index) = 0;
-    virtual VkSwapchainKHR &getSwapChain() = 0;
-    virtual VkQueue &getQueue() = 0;
     virtual VkRenderPass &getRenderPass() = 0;
     virtual VkCommandPool &getCommandPool() = 0;
 
@@ -31,6 +31,7 @@ public:
     virtual void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory) = 0;
 
     virtual void draw() = 0;
+    virtual void update() = 0;
 
     virtual void release() = 0;
     
