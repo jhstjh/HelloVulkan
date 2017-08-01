@@ -62,5 +62,7 @@ VK_IMPORT(vkCmdPipelineBarrier);
 VK_IMPORT(vkCmdCopyImage);
 VK_IMPORT(vkCreateSampler);
 VK_IMPORT(vkGetPhysicalDeviceFormatProperties)
+VK_IMPORT(vkCmdExecuteCommands)
+VK_IMPORT(vkCmdClearColorImage)
 
 #undef VK_IMPORT

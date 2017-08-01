@@ -7,8 +7,8 @@
 class Model
 {
 public:
-    Model(struct engine* engine);
-    void draw(VkQueue &queue, VkSemaphore* waitSemaphores, uint32_t waitSemaphoreCount, VkSemaphore* signalSemaphores, uint32_t signalSemaphoreCount, uint32_t nextIndex);
+    Model(struct engine* engine, float offsetZ);
+    VkCommandBuffer &getCommandBuffer(uint32_t nextIndex);
     void update();
 
 private:
@@ -29,9 +29,11 @@ private:
     VkDeviceMemory      mTextureImageMemory;
     VkImageView         mTextureImageView;
     VkSampler           mTextureSampler;
-    uint32_t            gCmdBufferLen;
+    uint32_t            mCmdBufferLen;
     VkDescriptorSetLayout mDescriptorSetLayout;
     VkPipelineLayout    mPLayout;
     VkPipelineCache     mPCache;
     VkPipeline          mPipeline;
+
+    float mOffsetZ{ 0.f };
 };

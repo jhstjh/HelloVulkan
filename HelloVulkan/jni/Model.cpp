@@ -73,7 +73,8 @@ struct UniformBufferObject
     mat4 proj;
 };
 
-Model::Model(struct engine* engine)
+Model::Model(struct engine* engine, float offsetZ)
+    : mOffsetZ(offsetZ)
 {
     auto assetManager = engine->app->activity->assetManager;
 
@@ -562,23 +563,23 @@ Model::Model(struct engine* engine)
     assert(result == VK_SUCCESS);
 
     // create command buffer
-    gCmdBufferLen = VKRenderer::getInstance().getSwapChainLength();
-    mCmdBuffer.resize(gCmdBufferLen);
+    mCmdBufferLen = VKRenderer::getInstance().getSwapChainLength();
+    mCmdBuffer.resize(mCmdBufferLen);
 
-    for (uint32_t bufferIndex = 0; bufferIndex < gCmdBufferLen; bufferIndex++)
+    for (uint32_t bufferIndex = 0; bufferIndex < mCmdBufferLen; bufferIndex++)
     {
-        VkCommandBufferAllocateInfo cmdBufferAllocationInfo;
+        VkCommandBufferAllocateInfo cmdBufferAllocationInfo{};
         cmdBufferAllocationInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         cmdBufferAllocationInfo.pNext = nullptr;
         cmdBufferAllocationInfo.commandPool = VKRenderer::getInstance().getCommandPool();
-        cmdBufferAllocationInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmdBufferAllocationInfo.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
         cmdBufferAllocationInfo.commandBufferCount = 1;
 
         result = vkAllocateCommandBuffers(VKRenderer::getInstance().getDevice(), &cmdBufferAllocationInfo, &mCmdBuffer[bufferIndex]);
         assert(result == VK_SUCCESS);
 
 
-        VkCommandBufferBeginInfo cmdBufferBeginInfo;
+        VkCommandBufferBeginInfo cmdBufferBeginInfo{};
         cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         cmdBufferBeginInfo.pNext = nullptr;
         cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
@@ -591,7 +592,7 @@ Model::Model(struct engine* engine)
         clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
         clearValues[1].depthStencil = { 1.0f, 0 };
 
-        VkRenderPassBeginInfo renderPassBeginInfo;
+        VkRenderPassBeginInfo renderPassBeginInfo{};
         renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassBeginInfo.pNext = nullptr;
         renderPassBeginInfo.renderPass = VKRenderer::getInstance().getRenderPass();
@@ -621,23 +622,9 @@ Model::Model(struct engine* engine)
     }
 }
 
-void Model::draw(VkQueue &queue, VkSemaphore* waitSemaphores, uint32_t waitSemaphoreCount, VkSemaphore* signalSemaphores, uint32_t signalSemaphoreCount, uint32_t nextIndex)
+VkCommandBuffer &Model::getCommandBuffer(uint32_t nextIndex)
 {
-    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.pNext = nullptr;
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = waitSemaphores;
-    submitInfo.pWaitDstStageMask = waitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &mCmdBuffer[nextIndex];
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = signalSemaphores;
-
-    auto result = vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-    assert(result == VK_SUCCESS);
+    return mCmdBuffer[nextIndex];
 }
 
 void Model::update()
@@ -649,9 +636,10 @@ void Model::update()
     auto displaySize = VKRenderer::getInstance().getDisplaySize();
 
     UniformBufferObject ubo = {};
+    mat4 transMat = Matrix<float, 4>::FromTranslationVector(Vector<float, 3>{ 0, 0, mOffsetZ });
     auto rotMat = Matrix<float, 3>::RotationY(time * 90.f / 180.f * 3.1415926);
-    ubo.model = mat4::FromRotationMatrix(rotMat);
-    ubo.view = mat4::LookAt(vec3(0.0f, 0.0f, 0.0f), vec3(2.0f, 2.0f, 2.0f), vec3(0.0f, 1.0f, 0.0f), 1.0f);
+    ubo.model = transMat * mat4::FromRotationMatrix(rotMat);
+    ubo.view = mat4::LookAt(vec3(0.0f, 0.0f, 0.0f), vec3(4.0f, 4.0f, 4.0f), vec3(0.0f, 1.0f, 0.0f), 1.0f);
     ubo.proj = mat4::Perspective((45.0f) / 180.f * 3.1415926, (float)displaySize.width / (float)displaySize.height, 0.1f, 10.0f);
     ubo.proj(1, 1) *= -1;
 

@@ -25,7 +25,12 @@ public:
 
     virtual ~VKRendererImpl()
     {
-        delete mModel;
+        for (auto &model : mModels)
+        {
+            delete model;
+        }
+        mModels.clear();
+
         vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
         vkDestroyDevice(mDevice, nullptr);
         vkDestroyInstance(mInstance, nullptr);
@@ -285,64 +290,73 @@ public:
         assert(result == VK_SUCCESS);
 
         // create render pass
-        VkAttachmentDescription attachmentDescriptions;
-        attachmentDescriptions.format = DisplayFormat;
-        attachmentDescriptions.samples = VK_SAMPLE_COUNT_1_BIT;
-        attachmentDescriptions.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        attachmentDescriptions.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        attachmentDescriptions.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        attachmentDescriptions.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        attachmentDescriptions.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        attachmentDescriptions.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        {
+            VkAttachmentDescription attachmentDescriptions;
+            attachmentDescriptions.format = DisplayFormat;
+            attachmentDescriptions.samples = VK_SAMPLE_COUNT_1_BIT;
+            attachmentDescriptions.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            attachmentDescriptions.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            attachmentDescriptions.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            attachmentDescriptions.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            attachmentDescriptions.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            attachmentDescriptions.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-        VkAttachmentReference colorReference;
-        colorReference.attachment = 0;
-        colorReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            VkAttachmentReference colorReference;
+            colorReference.attachment = 0;
+            colorReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-        VkAttachmentDescription depthAttachment = {};
-        depthAttachment.format = findDepthFormat();
-        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            VkAttachmentDescription depthAttachment = {};
+            depthAttachment.format = findDepthFormat();
+            depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+            depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-        VkAttachmentReference depthAttachmentRef = {};
-        depthAttachmentRef.attachment = 1;
-        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            VkAttachmentReference depthAttachmentRef = {};
+            depthAttachmentRef.attachment = 1;
+            depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-        VkSubpassDescription subpassDescription = {};
-        subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpassDescription.colorAttachmentCount = 1;
-        subpassDescription.pColorAttachments = &colorReference;
-        subpassDescription.pDepthStencilAttachment = &depthAttachmentRef;
+            VkSubpassDescription subpassDescription = {};
+            subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+            subpassDescription.colorAttachmentCount = 1;
+            subpassDescription.pColorAttachments = &colorReference;
+            subpassDescription.pDepthStencilAttachment = &depthAttachmentRef;
 
-        VkSubpassDependency dependency = {};
-        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-        dependency.dstSubpass = 0;
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.srcAccessMask = 0;
-        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            VkSubpassDependency dependency = {};
+            dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+            dependency.dstSubpass = 0;
+            dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dependency.srcAccessMask = 0;
+            dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
 
-        std::array<VkAttachmentDescription, 2> attachments = { attachmentDescriptions, depthAttachment };
+            std::array<VkAttachmentDescription, 2> attachments = { attachmentDescriptions, depthAttachment };
 
-        VkRenderPassCreateInfo renderPassCreateInfo;
-        renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassCreateInfo.pNext = nullptr;
-        renderPassCreateInfo.attachmentCount = attachments.size();
-        renderPassCreateInfo.pAttachments = attachments.data();
-        renderPassCreateInfo.subpassCount = 1;
-        renderPassCreateInfo.pSubpasses = &subpassDescription;
-        renderPassCreateInfo.dependencyCount = 1;
-        renderPassCreateInfo.pDependencies = &dependency;
+            VkRenderPassCreateInfo renderPassCreateInfo;
+            renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+            renderPassCreateInfo.pNext = nullptr;
+            renderPassCreateInfo.attachmentCount = attachments.size();
+            renderPassCreateInfo.pAttachments = attachments.data();
+            renderPassCreateInfo.subpassCount = 1;
+            renderPassCreateInfo.pSubpasses = &subpassDescription;
+            renderPassCreateInfo.dependencyCount = 1;
+            renderPassCreateInfo.pDependencies = &dependency;
 
-        result = vkCreateRenderPass(mDevice, &renderPassCreateInfo,
-            nullptr, &mRenderPass);
-        assert(result == VK_SUCCESS);
+            result = vkCreateRenderPass(mDevice, &renderPassCreateInfo,
+                nullptr, &mRenderPass);
+            assert(result == VK_SUCCESS);
+
+            attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+
+            result = vkCreateRenderPass(mDevice, &renderPassCreateInfo,
+                nullptr, &mRenderPassClear);
+            assert(result == VK_SUCCESS);
+        }
 
         // create command pool
         VkCommandPoolCreateInfo cmdPoolCreateInfo;
@@ -415,7 +429,22 @@ public:
         result = vkCreateSemaphore(VKRenderer::getInstance().getDevice(), &semaphoreCreateInfo, nullptr, &mRenderFinishedSemaphore);
         assert(result == VK_SUCCESS);
 
-        mModel = new Model(mEngine);
+        mPrimaryCmdBuffer.resize(mSwapchainLength);
+        for (uint32_t bufferIndex = 0; bufferIndex < mSwapchainLength; bufferIndex++)
+        {
+            VkCommandBufferAllocateInfo cmdBufferAllocationInfo{};
+            cmdBufferAllocationInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            cmdBufferAllocationInfo.pNext = nullptr;
+            cmdBufferAllocationInfo.commandPool = mCmdPool;
+            cmdBufferAllocationInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            cmdBufferAllocationInfo.commandBufferCount = 1;
+
+            result = vkAllocateCommandBuffers(mDevice, &cmdBufferAllocationInfo, &mPrimaryCmdBuffer[bufferIndex]);
+            assert(result == VK_SUCCESS);
+        }
+
+        mModels.push_back(new Model(mEngine, 0.f));
+        mModels.push_back(new Model(mEngine, 2.f));
     }
 
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiliting, VkImageUsageFlags usage,
@@ -686,15 +715,74 @@ public:
         vkBindBufferMemory(mDevice, buffer, bufferMemory, 0);
     };
 
+    void clearFrame(uint32_t nextIndex)
+    {
+        std::array<VkClearValue, 2> clearValues = {};
+        clearValues[0].color = { 0.3f, 0.3f, 0.3f, 1.0f };
+        clearValues[1].depthStencil = { 1.0f, 0 };
+
+        VkRenderPassBeginInfo renderPassBeginInfo{};
+        renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassBeginInfo.pNext = nullptr;
+        renderPassBeginInfo.renderPass = mRenderPassClear;
+        renderPassBeginInfo.framebuffer = mFramebuffers[nextIndex];
+        renderPassBeginInfo.renderArea.offset.x = 0;
+        renderPassBeginInfo.renderArea.offset.y = 0;
+        renderPassBeginInfo.renderArea.extent = mDisplaySize;
+        renderPassBeginInfo.clearValueCount = clearValues.size();
+        renderPassBeginInfo.pClearValues = clearValues.data();
+
+        vkCmdBeginRenderPass(mPrimaryCmdBuffer[nextIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdEndRenderPass(mPrimaryCmdBuffer[nextIndex]);
+    }
+
     void draw() final
     {
-        VkResult result;
+        vkQueueWaitIdle(mQueue);
 
         uint32_t nextIndex;
-        result = vkAcquireNextImageKHR(mDevice, mSwapchain, 0xFFFFFFFFFFFFFFFFull, mImageAvailableSemaphore, VK_NULL_HANDLE, &nextIndex);
+        VkResult result = vkAcquireNextImageKHR(mDevice, mSwapchain, 0xFFFFFFFFFFFFFFFFull, mImageAvailableSemaphore, VK_NULL_HANDLE, &nextIndex);
         assert(result == VK_SUCCESS);
 
-        mModel->draw(mQueue, &mImageAvailableSemaphore, 1, &mRenderFinishedSemaphore, 1, nextIndex);
+        VkCommandBufferBeginInfo cmdBufferBeginInfo{};
+        cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        cmdBufferBeginInfo.pNext = nullptr;
+        cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+        cmdBufferBeginInfo.pInheritanceInfo = nullptr;
+
+        result = vkBeginCommandBuffer(mPrimaryCmdBuffer[nextIndex], &cmdBufferBeginInfo);
+        assert(result == VK_SUCCESS);
+
+        clearFrame(nextIndex);
+
+        std::vector<VkCommandBuffer> commandbuffers;
+        for (auto &model : mModels)
+        {
+            commandbuffers.push_back(model->getCommandBuffer(nextIndex));
+        }
+
+        if (commandbuffers.size())
+        {
+            vkCmdExecuteCommands(mPrimaryCmdBuffer[nextIndex], commandbuffers.size(), commandbuffers.data());
+        }
+
+        result = vkEndCommandBuffer(mPrimaryCmdBuffer[nextIndex]);
+
+        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.pNext = nullptr;
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = &mImageAvailableSemaphore;
+        submitInfo.pWaitDstStageMask = waitStages;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &mPrimaryCmdBuffer[nextIndex];
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = &mRenderFinishedSemaphore;
+
+        result = vkQueueSubmit(mQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        assert(result == VK_SUCCESS);
 
         VkPresentInfoKHR presentInfo = {};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -702,16 +790,19 @@ public:
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = &mSwapchain;
         presentInfo.pImageIndices = &nextIndex;
-        presentInfo.waitSemaphoreCount = 0;
-        presentInfo.pWaitSemaphores = nullptr;
-        presentInfo.pResults = &result;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = &mRenderFinishedSemaphore;
+        presentInfo.pResults = nullptr;
 
         vkQueuePresentKHR(mQueue, &presentInfo);
     }
 
     void update() final
     {
-        mModel->update();
+        for (auto &model : mModels)
+        {
+            model->update();
+        }
     }
 
     VkDevice &getDevice() final
@@ -774,8 +865,9 @@ public:
     std::vector<VkImageView>        mDisplayViews;
 
     VkRenderPass        mRenderPass;
+    VkRenderPass        mRenderPassClear;
     VkCommandPool       mCmdPool;
-    std::vector<VkCommandBuffer>    mCmdBuffer;
+    std::vector<VkCommandBuffer>    mPrimaryCmdBuffer;
     VkImage             mDepthImage;
     VkDeviceMemory      mDepthImageMemory;
     VkImageView         mDepthImageView;
@@ -784,7 +876,7 @@ public:
     VkSemaphore         mRenderFinishedSemaphore;
 
     engine*           mEngine{ nullptr };
-    Model*            mModel{ nullptr };
+    std::vector<Model*>            mModels;
 };
 
 }
