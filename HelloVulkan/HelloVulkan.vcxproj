@@ -45,7 +45,7 @@
   <PropertyGroup />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Tegra-Android'">
     <ClCompile>
-      <CppLanguageStandard>gnu++11</CppLanguageStandard>
+      <CppLanguageStandard>gnu++1y</CppLanguageStandard>
       <PreprocessorDefinitions>DISABLE_IMPORTGL;VK_USE_PLATFORM_ANDROID_KHR</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -62,7 +62,7 @@ compileShaders.cmd</PreBuildCommand>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Tegra-Android'">
     <ClCompile>
-      <CppLanguageStandard>gnu++11</CppLanguageStandard>
+      <CppLanguageStandard>gnu++1y</CppLanguageStandard>
       <PreprocessorDefinitions>DISABLE_IMPORTGL</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -79,7 +79,7 @@ compileShaders.cmd</PreBuildCommand>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Shipping|Tegra-Android'">
     <ClCompile>
-      <CppLanguageStandard>gnu++11</CppLanguageStandard>
+      <CppLanguageStandard>gnu++1y</CppLanguageStandard>
       <PreprocessorDefinitions>DISABLE_IMPORTGL</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -101,6 +101,7 @@ compileShaders.cmd</PreBuildCommand>
   <ItemGroup>
     <ClCompile Include="jni\main.cpp" />
     <ClCompile Include="jni\Model.cpp" />
+    <ClCompile Include="jni\ShadowMap.cpp" />
     <ClCompile Include="jni\VKFuncs.cpp" />
     <ClCompile Include="jni\VKRenderer.cpp" />
     <ClCompile Include="native_app_glue\android_native_app_glue.c" />
@@ -119,6 +120,7 @@ compileShaders.cmd</PreBuildCommand>
     <ClInclude Include="jni\mathfu\vector_3.h" />
     <ClInclude Include="jni\mathfu\vector_4.h" />
     <ClInclude Include="jni\Model.h" />
+    <ClInclude Include="jni\ShadowMap.h" />
     <ClInclude Include="jni\VKFuncs.h" />
     <ClInclude Include="jni\VKImport.h" />
     <ClInclude Include="jni\VKRenderer.h" />
@@ -133,6 +135,8 @@ compileShaders.cmd</PreBuildCommand>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
+    <None Include="assets\shadow.frag" />
+    <None Include="assets\shadow.vert" />
     <None Include="assets\texture.jpg" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

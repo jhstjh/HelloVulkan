@@ -2,11 +2,13 @@
 #include <android/asset_manager_jni.h>
 
 #include <cassert>
+#include <memory>
 #include <vector>
 #include "engine.h"
 #include "VKFuncs.h"
 #include "VKRenderer.h"
 #include "Model.h"
+#include "ShadowMap.h"
 
 namespace VK_RENDERER
 {
@@ -443,8 +445,10 @@ public:
             assert(result == VK_SUCCESS);
         }
 
-        mModels.push_back(new Model(mEngine, 0.f));
-        mModels.push_back(new Model(mEngine, 2.f));
+        mShadowMap = std::make_unique<ShadowMap>();
+
+        mModels.push_back(new Model("chalet", mEngine, 0.f));
+        mModels.push_back(new Model("cube", mEngine, 2.f));
     }
 
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiliting, VkImageUsageFlags usage,
@@ -755,18 +759,15 @@ public:
 
         clearFrame(nextIndex);
 
+        result = vkEndCommandBuffer(mPrimaryCmdBuffer[nextIndex]);
+        assert(result == VK_SUCCESS);
+
         std::vector<VkCommandBuffer> commandbuffers;
+        commandbuffers.push_back(mPrimaryCmdBuffer[nextIndex]);
         for (auto &model : mModels)
         {
             commandbuffers.push_back(model->getCommandBuffer(nextIndex));
         }
-
-        if (commandbuffers.size())
-        {
-            vkCmdExecuteCommands(mPrimaryCmdBuffer[nextIndex], commandbuffers.size(), commandbuffers.data());
-        }
-
-        result = vkEndCommandBuffer(mPrimaryCmdBuffer[nextIndex]);
 
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
@@ -776,8 +777,8 @@ public:
         submitInfo.waitSemaphoreCount = 1;
         submitInfo.pWaitSemaphores = &mImageAvailableSemaphore;
         submitInfo.pWaitDstStageMask = waitStages;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &mPrimaryCmdBuffer[nextIndex];
+        submitInfo.commandBufferCount = commandbuffers.size();
+        submitInfo.pCommandBuffers = commandbuffers.data();
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = &mRenderFinishedSemaphore;
 
@@ -803,6 +804,11 @@ public:
         {
             model->update();
         }
+    }
+
+    ShadowMap* getShadowMap() final
+    {
+        return mShadowMap.get();
     }
 
     VkDevice &getDevice() final
@@ -877,6 +883,7 @@ public:
 
     engine*           mEngine{ nullptr };
     std::vector<Model*>            mModels;
+    std::unique_ptr<ShadowMap>     mShadowMap;
 };
 
 }

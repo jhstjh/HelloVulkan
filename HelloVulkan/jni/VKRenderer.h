@@ -4,6 +4,8 @@
 
 struct engine;
 
+class ShadowMap;
+
 class VKRenderer
 {
 public:
@@ -32,6 +34,8 @@ public:
 
     virtual void draw() = 0;
     virtual void update() = 0;
+
+    virtual ShadowMap* getShadowMap() = 0;
 
     virtual void release() = 0;
     
