@@ -52,10 +52,12 @@ class Model
 public:
     Model(std::string name, struct engine* engine, float offsetZ);
     VkCommandBuffer &getCommandBuffer(uint32_t nextIndex);
+    VkCommandBuffer &getShadowCommandBuffer(uint32_t nextIndex);
     void update();
 
 private:
     std::vector<VkCommandBuffer>    mCmdBuffer;
+    std::vector<VkCommandBuffer>    mShadowCmdBuffer;
     VkBuffer            mVertexBuffer;
     VkDeviceMemory      mVertexBufferMemory;
     VkBuffer            mIndexBuffer;
@@ -64,8 +66,14 @@ private:
     VkDeviceMemory      mUniformStagingBufferMemory;
     VkBuffer            mUniformBuffer;
     VkDeviceMemory      mUniformBufferMemory;
+    VkBuffer            mShadowUniformStagingBuffer;
+    VkDeviceMemory      mShadowUniformStagingBufferMemory;
+    VkBuffer            mShadowUniformBuffer;
+    VkDeviceMemory      mShadowUniformBufferMemory;
     VkDescriptorPool    mDescriptorPool;
     VkDescriptorSet     mDescriptorSet;
+    VkDescriptorPool    mShadowDescriptorPool;
+    VkDescriptorSet     mShadowDescriptorSet;
     VkImage             mStagingImage;
     VkDeviceMemory      mStagingImageMemory;
     VkImage             mTextureImage;
@@ -74,9 +82,15 @@ private:
     VkSampler           mTextureSampler;
     uint32_t            mCmdBufferLen;
     VkDescriptorSetLayout mDescriptorSetLayout;
+    VkDescriptorSetLayout mShadowDescriptorSetLayout;
+
     VkPipelineLayout    mPLayout;
     VkPipelineCache     mPCache;
     VkPipeline          mPipeline;
+
+    VkPipelineLayout    mShadowPLayout;
+    VkPipelineCache     mShadowPCache;
+    VkPipeline          mShadowPipeline;
 
     float mOffsetZ{ 0.f };
     std::vector<Model::Vertex>  mVertices;

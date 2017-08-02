@@ -17,6 +17,16 @@ public:
         return mShadowDepthImageSampler;
     }
 
+    VkRenderPass getRenderPass()
+    {
+        return mShadowRenderPass;
+    }
+
+    VkFramebuffer getFramebuffer()
+    {
+        return mShadowDepthFramebuffer;
+    }
+
 private:
     struct
     {
@@ -24,6 +34,7 @@ private:
     } UboShadow;
 
     VkRenderPass    mShadowRenderPass;
+    VkRenderPass    mShadowRenderPassClear;
     VkImage         mShadowDepthImage;
     VkImageView     mShadowDepthImageView;
     VkDeviceMemory  mShadowDepthImageMemory;

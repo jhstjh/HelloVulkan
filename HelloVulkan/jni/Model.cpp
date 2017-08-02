@@ -236,6 +236,14 @@ Model::Model(std::string name, struct engine* engine, float offsetZ)
         VKRenderer::getInstance().createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mUniformBuffer, mUniformBufferMemory);
     }
 
+    // create shadow uniform buffer
+    {
+        VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+        VKRenderer::getInstance().createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, mShadowUniformStagingBuffer, mShadowUniformStagingBufferMemory);
+        VKRenderer::getInstance().createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mShadowUniformBuffer, mShadowUniformBufferMemory);
+    }
+
     // create descriptor set layout
     {
         VkDescriptorSetLayoutBinding uboLayoutBinding = {};
@@ -339,6 +347,69 @@ Model::Model(std::string name, struct engine* engine, float offsetZ)
         descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[2].descriptorCount = 1;
         descriptorWrites[2].pImageInfo = &shadowImageInfo;
+
+        vkUpdateDescriptorSets(VKRenderer::getInstance().getDevice(), descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+    }
+
+    // create shadow descriptor set layout
+    {
+        VkDescriptorSetLayoutBinding uboLayoutBinding = {};
+        uboLayoutBinding.binding = 0;
+        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboLayoutBinding.descriptorCount = 1;
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+
+        std::array<VkDescriptorSetLayoutBinding, 1> bindings = { uboLayoutBinding };
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = bindings.size();
+        layoutInfo.pBindings = bindings.data();
+
+        auto result = vkCreateDescriptorSetLayout(VKRenderer::getInstance().getDevice(), &layoutInfo, nullptr, &mShadowDescriptorSetLayout);
+        assert(result == VK_SUCCESS);
+    }
+
+    // create shadow descriptor pool
+    {
+        std::array<VkDescriptorPoolSize, 1> poolSizes = {};
+        poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSizes[0].descriptorCount = 1;
+
+        VkDescriptorPoolCreateInfo poolInfo = {};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = poolSizes.size();
+        poolInfo.pPoolSizes = poolSizes.data();
+        poolInfo.maxSets = 1;
+
+        auto result = vkCreateDescriptorPool(VKRenderer::getInstance().getDevice(), &poolInfo, nullptr, &mShadowDescriptorPool);
+        assert(result == VK_SUCCESS);
+
+        // create descriptor set
+        VkDescriptorSetLayout uboLayouts[] = { mShadowDescriptorSetLayout };
+        VkDescriptorSetAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = mShadowDescriptorPool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = uboLayouts;
+
+        result = vkAllocateDescriptorSets(VKRenderer::getInstance().getDevice(), &allocInfo, &mShadowDescriptorSet);
+        assert(result == VK_SUCCESS);
+
+        VkDescriptorBufferInfo bufferInfo = {};
+        bufferInfo.buffer = mShadowUniformBuffer;
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject);
+
+        std::array<VkWriteDescriptorSet, 1> descriptorWrites = {};
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = mShadowDescriptorSet;
+        descriptorWrites[0].dstBinding = 0;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pBufferInfo = &bufferInfo;
 
         vkUpdateDescriptorSets(VKRenderer::getInstance().getDevice(), descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
     }
@@ -465,7 +536,6 @@ Model::Model(std::string name, struct engine* engine, float offsetZ)
         colorBlendInfo.attachmentCount = 1;
         colorBlendInfo.pAttachments = &attachmentStates;
 
-
         VkPipelineRasterizationStateCreateInfo rasterInfo;
         rasterInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterInfo.pNext = nullptr;
@@ -482,17 +552,6 @@ Model::Model(std::string name, struct engine* engine, float offsetZ)
         inputAssemblyInfo.pNext = nullptr;
         inputAssemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         inputAssemblyInfo.primitiveRestartEnable = VK_FALSE;
-
-        VkVertexInputBindingDescription vertexInputBindings;
-        vertexInputBindings.binding = 0;
-        vertexInputBindings.stride = 3 * sizeof(float);
-        vertexInputBindings.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        VkVertexInputAttributeDescription vertexInputAttributes[1];
-        vertexInputAttributes[0].binding = 0;
-        vertexInputAttributes[0].location = 0;
-        vertexInputAttributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        vertexInputAttributes[0].offset = 0;
 
         auto bindingDescription = Vertex::getBindingDescription();
         auto attributeDescriptions = Vertex::getAttributeDescriptions();
@@ -610,11 +669,238 @@ Model::Model(std::string name, struct engine* engine, float offsetZ)
             assert(result == VK_SUCCESS);
         }
     }
+
+    // create shadow graphics pipeline
+    {
+        VkDescriptorSetLayout setLayouts[] = { mShadowDescriptorSetLayout };
+        VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
+        pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutCreateInfo.pNext = nullptr;
+        pipelineLayoutCreateInfo.setLayoutCount = 1;
+        pipelineLayoutCreateInfo.pSetLayouts = setLayouts;
+        pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
+        pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
+
+        auto result = vkCreatePipelineLayout(VKRenderer::getInstance().getDevice(), &pipelineLayoutCreateInfo, nullptr, &mShadowPLayout);
+        assert(result == VK_SUCCESS);
+
+        VkPipelineDynamicStateCreateInfo dynamicStateInfo{};
+        dynamicStateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        dynamicStateInfo.pNext = nullptr;
+        dynamicStateInfo.dynamicStateCount = 0;
+        dynamicStateInfo.pDynamicStates = nullptr;
+
+        AAsset* vs = AAssetManager_open(assetManager, "shader.vert.spv", AASSET_MODE_UNKNOWN);
+        assert(vs);
+        auto size = AAsset_getLength(vs);
+        std::vector<uint8_t> vsData(size);
+        AAsset_read(vs, vsData.data(), size);
+        AAsset_close(vs);
+
+        VkShaderModule vertexShader;
+
+        VkShaderModuleCreateInfo shaderModuleCreateInfo{};
+        shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        shaderModuleCreateInfo.pNext = nullptr;
+        shaderModuleCreateInfo.codeSize = vsData.size();
+        shaderModuleCreateInfo.pCode = (const uint32_t*)(vsData.data());
+        shaderModuleCreateInfo.flags = 0;
+
+        result = vkCreateShaderModule(
+            VKRenderer::getInstance().getDevice(), &shaderModuleCreateInfo, nullptr, &vertexShader);
+        assert(result == VK_SUCCESS);
+
+
+        VkPipelineShaderStageCreateInfo shaderStages[1];
+
+        shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[0].pNext = nullptr;
+        shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        shaderStages[0].module = vertexShader;
+        shaderStages[0].pSpecializationInfo = nullptr;
+        shaderStages[0].flags = 0;
+        shaderStages[0].pName = "main";
+
+        auto displaySize = VKRenderer::getInstance().getDisplaySize();
+
+        VkViewport viewports;
+        viewports.minDepth = 0.0f;
+        viewports.maxDepth = 1.0f;
+        viewports.x = 0;
+        viewports.y = 0;
+        viewports.width = 2048; // TODO
+        viewports.height = 2048;
+
+        VkRect2D scissor;
+        scissor.extent = displaySize;
+        scissor.extent.width = 2048;
+        scissor.extent.height = 2048;
+        scissor.offset.x = 0;
+        scissor.offset.y = 0;
+
+        VkPipelineViewportStateCreateInfo viewportInfo{};
+        viewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportInfo.pNext = nullptr;
+        viewportInfo.viewportCount = 1;
+        viewportInfo.pViewports = &viewports;
+        viewportInfo.scissorCount = 1;
+        viewportInfo.pScissors = &scissor;
+
+        VkSampleMask sampleMask = ~0u;
+        VkPipelineMultisampleStateCreateInfo multisampleInfo{};
+        multisampleInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampleInfo.pNext = nullptr;
+        multisampleInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        multisampleInfo.sampleShadingEnable = VK_FALSE;
+        multisampleInfo.minSampleShading = 0;
+        multisampleInfo.pSampleMask = &sampleMask;
+        multisampleInfo.alphaToCoverageEnable = VK_FALSE;
+        multisampleInfo.alphaToOneEnable = VK_FALSE;
+
+        VkPipelineRasterizationStateCreateInfo rasterInfo{};
+        rasterInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterInfo.pNext = nullptr;
+        rasterInfo.depthClampEnable = VK_FALSE;
+        rasterInfo.rasterizerDiscardEnable = VK_FALSE;
+        rasterInfo.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterInfo.cullMode = VK_CULL_MODE_NONE;
+        rasterInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        rasterInfo.depthBiasEnable = VK_FALSE;
+        rasterInfo.lineWidth = 1;
+
+        VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo{};
+        inputAssemblyInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssemblyInfo.pNext = nullptr;
+        inputAssemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        inputAssemblyInfo.primitiveRestartEnable = VK_FALSE;
+
+        auto bindingDescription = Vertex::getBindingDescription();
+        auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+        vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInputInfo.pNext = nullptr;
+        vertexInputInfo.vertexBindingDescriptionCount = 1;
+        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+        vertexInputInfo.vertexAttributeDescriptionCount = attributeDescriptions.size();
+        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
+        VkPipelineCacheCreateInfo pipelineCacheInfo{};
+        pipelineCacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+        pipelineCacheInfo.pNext = nullptr;
+        pipelineCacheInfo.initialDataSize = 0;
+        pipelineCacheInfo.pInitialData = nullptr;
+        pipelineCacheInfo.flags = 0;
+
+        result = vkCreatePipelineCache(VKRenderer::getInstance().getDevice(), &pipelineCacheInfo, nullptr, &mShadowPCache);
+        assert(result == VK_SUCCESS);
+
+        VkPipelineDepthStencilStateCreateInfo depthStencil = {};
+        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable = VK_TRUE;
+        depthStencil.depthWriteEnable = VK_TRUE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+        depthStencil.depthBoundsTestEnable = VK_FALSE;
+        depthStencil.minDepthBounds = 0.f;
+        depthStencil.maxDepthBounds = 0.f;
+        depthStencil.stencilTestEnable = VK_FALSE;
+        depthStencil.front = {};
+        depthStencil.back = {};
+
+        VkGraphicsPipelineCreateInfo pipelineCreateInfo = {};
+        pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineCreateInfo.pNext = nullptr;
+        pipelineCreateInfo.flags = 0;
+        pipelineCreateInfo.stageCount = 1;
+        pipelineCreateInfo.pStages = shaderStages;
+        pipelineCreateInfo.pVertexInputState = &vertexInputInfo;
+        pipelineCreateInfo.pInputAssemblyState = &inputAssemblyInfo;
+        pipelineCreateInfo.pTessellationState = nullptr;
+        pipelineCreateInfo.pViewportState = &viewportInfo;
+        pipelineCreateInfo.pRasterizationState = &rasterInfo;
+        pipelineCreateInfo.pMultisampleState = &multisampleInfo;
+        pipelineCreateInfo.pDepthStencilState = &depthStencil;
+        pipelineCreateInfo.pColorBlendState = nullptr;
+        pipelineCreateInfo.pDynamicState = &dynamicStateInfo;
+        pipelineCreateInfo.layout = mShadowPLayout;
+        pipelineCreateInfo.renderPass = VKRenderer::getInstance().getShadowMap()->getRenderPass();
+        pipelineCreateInfo.subpass = 0;
+        pipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
+        pipelineCreateInfo.basePipelineIndex = 0;
+
+        result = vkCreateGraphicsPipelines(VKRenderer::getInstance().getDevice(), mShadowPCache, 1, &pipelineCreateInfo, nullptr, &mShadowPipeline);
+        assert(result == VK_SUCCESS);
+
+        // create command buffer
+        mCmdBufferLen = VKRenderer::getInstance().getSwapChainLength();
+        mShadowCmdBuffer.resize(mCmdBufferLen);
+
+        for (uint32_t bufferIndex = 0; bufferIndex < mCmdBufferLen; bufferIndex++)
+        {
+            VkCommandBufferAllocateInfo cmdBufferAllocationInfo{};
+            cmdBufferAllocationInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            cmdBufferAllocationInfo.pNext = nullptr;
+            cmdBufferAllocationInfo.commandPool = VKRenderer::getInstance().getCommandPool();
+            cmdBufferAllocationInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            cmdBufferAllocationInfo.commandBufferCount = 1;
+
+            result = vkAllocateCommandBuffers(VKRenderer::getInstance().getDevice(), &cmdBufferAllocationInfo, &mShadowCmdBuffer[bufferIndex]);
+            assert(result == VK_SUCCESS);
+
+
+            VkCommandBufferBeginInfo cmdBufferBeginInfo{};
+            cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            cmdBufferBeginInfo.pNext = nullptr;
+            cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+            cmdBufferBeginInfo.pInheritanceInfo = nullptr;
+
+            result = vkBeginCommandBuffer(mShadowCmdBuffer[bufferIndex], &cmdBufferBeginInfo);
+            assert(result == VK_SUCCESS);
+
+            std::array<VkClearValue, 2> clearValues = {};
+            clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+            clearValues[1].depthStencil = { 1.0f, 0 };
+
+            VkRenderPassBeginInfo renderPassBeginInfo{};
+            renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassBeginInfo.pNext = nullptr;
+            renderPassBeginInfo.renderPass = VKRenderer::getInstance().getShadowMap()->getRenderPass();
+            renderPassBeginInfo.framebuffer = VKRenderer::getInstance().getShadowMap()->getFramebuffer();
+            renderPassBeginInfo.renderArea.offset.x = 0;
+            renderPassBeginInfo.renderArea.offset.y = 0;
+            renderPassBeginInfo.renderArea.extent.width = 2048;
+            renderPassBeginInfo.renderArea.extent.height = 2048;
+            renderPassBeginInfo.clearValueCount = clearValues.size();
+            renderPassBeginInfo.pClearValues = clearValues.data();
+
+            vkCmdBeginRenderPass(mShadowCmdBuffer[bufferIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+            vkCmdBindPipeline(mShadowCmdBuffer[bufferIndex], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                mShadowPipeline);
+
+            VkBuffer vertexBuffers[] = { mVertexBuffer };
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(mShadowCmdBuffer[bufferIndex], 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer(mShadowCmdBuffer[bufferIndex], mIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindDescriptorSets(mShadowCmdBuffer[bufferIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, mShadowPLayout, 0, 1, &mShadowDescriptorSet, 0, nullptr);
+
+            vkCmdDrawIndexed(mShadowCmdBuffer[bufferIndex], mIndices.size(), 1, 0, 0, 0);
+
+            vkCmdEndRenderPass(mShadowCmdBuffer[bufferIndex]);
+            result = vkEndCommandBuffer(mShadowCmdBuffer[bufferIndex]);
+            assert(result == VK_SUCCESS);
+        }
+    }
 }
 
 VkCommandBuffer &Model::getCommandBuffer(uint32_t nextIndex)
 {
     return mCmdBuffer[nextIndex];
+}
+
+VkCommandBuffer &Model::getShadowCommandBuffer(uint32_t nextIndex)
+{
+    return mShadowCmdBuffer[nextIndex];
 }
 
 void Model::update()
