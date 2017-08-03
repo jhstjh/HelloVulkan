@@ -54,8 +54,8 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules)
 if(HV_MSVC)
     set(CMAKE_CPP_FLAGS_INIT "/DWIN32 /D_WINDOWS /Wv:18 /W4 /bigobj")
 
-    set(CMAKE_CPP_FLAGS_DEBUG_INIT "${CMAKE_CPP_FLAGS_INIT} /Od /MTd /Zi /D_ITERATOR_DEBUG_LEVEL=0 /D_DEBUG=1")
-    set(CMAKE_CPP_FLAGS_RELEASE_INIT "${CMAKE_CPP_FLAGS_INIT} /MT /O2 /Ob2 /Zi /D_RELEASE=1")
+    set(CMAKE_CPP_FLAGS_DEBUG_INIT "${CMAKE_CPP_FLAGS_INIT} /Od /Zi /D_ITERATOR_DEBUG_LEVEL=0 /D_DEBUG=1")
+    set(CMAKE_CPP_FLAGS_RELEASE_INIT "${CMAKE_CPP_FLAGS_INIT} /O2 /Ob2 /Zi /D_RELEASE=1")
 
     set(CMAKE_C_FLAGS_INIT "/wd4131")
     set(CMAKE_C_FLAGS_DEBUG_INIT "${CMAKE_CPP_FLAGS_DEBUG_INIT} ${CMAKE_C_FLAGS_INIT}")
@@ -133,6 +133,12 @@ if(HV_ANDROID)
 	set(CMAKE_ANDROID_ASSETS_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/assets")
 endif()
 
+if(HV_WINDOWS)
+	link_directories(
+		"${CMAKE_CURRENT_SOURCE_DIR}/lib/windows/"
+		$ENV{VULKAN_SDK}/Bin)
+endif()
+
 #--------------------------------------------------
 # Grab source files
 #--------------------------------------------------
@@ -162,9 +168,14 @@ if (HV_WINDOWS)
 	file(GLOB HV_PLATFORM_SOURCES 
 		windows/*.h
 		windows/*.cpp
+		windows/GLFW/*.h
 	)
 	
-	list(APPEND HV_INCLUDE_DIRS windows)
+	list(APPEND HV_INCLUDE_DIRS 
+		windows 
+		windows/GLFW
+		$ENV{VULKAN_SDK}/Include
+		)
 endif()
 
 list(APPEND HV_SOURCE ${HV_PLATFORM_SOURCES})
@@ -181,3 +192,12 @@ add_custom_command(TARGET HelloVulkan
     PRE_BUILD
 	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/assets
     COMMAND cmd /c ${CMAKE_CURRENT_SOURCE_DIR}/assets/compileShaders.cmd)
+	
+if(HV_WINDOWS)
+	link_directories(
+		"${CMAKE_CURRENT_SOURCE_DIR}/lib/windows/"
+		$ENV{VULKAN_SDK}/Bin)
+		
+	target_link_libraries(HelloVulkan vulkan-1.lib glfw3.lib)	
+	set_target_properties(HelloVulkan PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+endif()	

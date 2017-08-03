@@ -9,13 +9,17 @@
 
 #ifdef _ANDROID
 #include "engine.h"
+#else
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
 #endif
 
 namespace VK_RENDERER
 {
 class VKRendererImpl : public VKRenderer
 {
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType, uint64_t obj, size_t location, int32_t code, const char* layerPrefix, const char* msg, void* userData) {
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugReportFlagsEXT /*flags*/, VkDebugReportObjectTypeEXT /*objType*/, uint64_t /*obj*/, size_t /*location*/, int32_t /*code*/, const char* /*layerPrefix*/, const char* msg, void* /*userData*/) {
         LOGW("validation layer: %s\n", msg);
         return VK_FALSE;
     }
@@ -41,12 +45,8 @@ public:
         unloadVKLibs();
     }
 
-    void init(struct engine* engine) final
+    void init(void* platform) final
     {
-        mEngine = engine;
-
-        off_t size;
-
         loadVKLibs();
         loadVKFuncs();
 
@@ -89,6 +89,7 @@ public:
         }
 
         const char *instance_layers[] = {
+#ifdef _ANDROID
             "VK_LAYER_GOOGLE_threading",
             "VK_LAYER_LUNARG_parameter_validation",
             "VK_LAYER_LUNARG_object_tracker",
@@ -96,6 +97,9 @@ public:
             "VK_LAYER_LUNARG_image",
             "VK_LAYER_LUNARG_swapchain",
             "VK_LAYER_GOOGLE_unique_objects"
+#else
+            "VK_LAYER_LUNARG_standard_validation"
+#endif
         };
 
         uint32_t instance_layer_request_count =
@@ -112,12 +116,13 @@ public:
             }
         }
 
-        VkInstanceCreateInfo instanceCreateInfo = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
+        VkInstanceCreateInfo instanceCreateInfo = { };
+        instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         instanceCreateInfo.pApplicationInfo = &applicationInfo;
-        instanceCreateInfo.enabledExtensionCount = extNames.size();
+        instanceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(extNames.size());
         instanceCreateInfo.ppEnabledExtensionNames = extNames.data();
-        instanceCreateInfo.enabledLayerCount = layerNames.size();
-        instanceCreateInfo.ppEnabledLayerNames = layerNames.data();
+        instanceCreateInfo.enabledLayerCount = sizeof(instance_layers) / sizeof(instance_layers[0]);
+        instanceCreateInfo.ppEnabledLayerNames = instance_layers;
 
         result = vkCreateInstance(&instanceCreateInfo, nullptr, &mInstance);
         assert(result == VK_SUCCESS);
@@ -143,9 +148,14 @@ public:
         debugReportCallbackCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
         debugReportCallbackCreateInfo.pfnCallback = debugCallback;
 
+#ifdef _ANDROID
         PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT =
             reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(
                 loadFuncFromValidationLib("vkCreateDebugReportCallbackEXT"));
+#else
+        PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(mInstance, "vkCreateDebugReportCallbackEXT");
+        assert(vkCreateDebugReportCallbackEXT);
+#endif
 
         VkDebugReportCallbackEXT debugReportCallback;
         result = vkCreateDebugReportCallbackEXT(mInstance, &debugReportCallbackCreateInfo, nullptr, &debugReportCallback);
@@ -183,12 +193,18 @@ public:
         // init surface
 #ifdef _ANDROID
         VkAndroidSurfaceCreateInfoKHR createInfo = { VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR };
-        createInfo.window = engine->app->window;
+        createInfo.window = reinterpret_cast<struct engine*>(platform)->app->window;
 
         result = vkCreateAndroidSurfaceKHR(mInstance, &createInfo, nullptr, &mSurface);
         assert(result == VK_SUCCESS);
 #else
-#error
+        VkWin32SurfaceCreateInfoKHR createInfo;
+        createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+        createInfo.hwnd = glfwGetWin32Window(reinterpret_cast<GLFWwindow*>(platform));
+        createInfo.hinstance = GetModuleHandle(nullptr);
+
+        result = vkCreateWin32SurfaceKHR(mInstance, &createInfo, nullptr, &mSurface);
+        assert(result == VK_SUCCESS);
 #endif
 
         VkDeviceQueueCreateInfo queueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
@@ -200,9 +216,9 @@ public:
         VkDeviceCreateInfo deviceCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
         deviceCreateInfo.queueCreateInfoCount = 1;
         deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
-        deviceCreateInfo.enabledExtensionCount = deviceExtNames.size();
+        deviceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtNames.size());
         deviceCreateInfo.ppEnabledExtensionNames = deviceExtNames.data();
-        deviceCreateInfo.enabledLayerCount = deviceLayerNames.size();
+        deviceCreateInfo.enabledLayerCount = static_cast<uint32_t>(deviceLayerNames.size());
         deviceCreateInfo.ppEnabledLayerNames = deviceLayerNames.data();
 
 
@@ -258,7 +274,11 @@ public:
 
         uint32_t chosenFormat;
         for (chosenFormat = 0; chosenFormat < formatCount; chosenFormat++) {
+#ifdef _ANDROID
             if (formats[chosenFormat].format == VK_FORMAT_R8G8B8A8_UNORM)
+#else
+            if (formats[chosenFormat].format == VK_FORMAT_B8G8R8A8_UNORM)
+#endif
                 break;
         }
         assert(chosenFormat < formatCount);
@@ -345,7 +365,7 @@ public:
             VkRenderPassCreateInfo renderPassCreateInfo;
             renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
             renderPassCreateInfo.pNext = nullptr;
-            renderPassCreateInfo.attachmentCount = attachments.size();
+            renderPassCreateInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
             renderPassCreateInfo.pAttachments = attachments.data();
             renderPassCreateInfo.subpassCount = 1;
             renderPassCreateInfo.pSubpasses = &subpassDescription;
@@ -414,7 +434,7 @@ public:
             fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
             fbCreateInfo.renderPass = mRenderPass;
             fbCreateInfo.layers = 1;
-            fbCreateInfo.attachmentCount = attachments.size();
+            fbCreateInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
             fbCreateInfo.pAttachments = attachments.data();
             fbCreateInfo.width = static_cast<uint32_t>(mDisplaySize.width);
             fbCreateInfo.height = static_cast<uint32_t>(mDisplaySize.height);
@@ -458,8 +478,8 @@ public:
 
         mShadowMap = std::make_unique<ShadowMap>();
 
-        mModels.push_back(new Model("chalet", mEngine, 0.f));
-        mModels.push_back(new Model("cube", mEngine, 2.f));
+        mModels.push_back(new Model("chalet", 0.f));
+        mModels.push_back(new Model("cube", 2.f));
     }
 
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiliting, VkImageUsageFlags usage,
@@ -681,6 +701,7 @@ public:
         }
 
         assert(false);
+        return VK_FORMAT_UNDEFINED;
     }
 
     VkFormat findDepthFormat()
@@ -745,7 +766,7 @@ public:
         renderPassBeginInfo.renderArea.offset.y = 0;
         renderPassBeginInfo.renderArea.extent.width = 2048;
         renderPassBeginInfo.renderArea.extent.height = 2048;
-        renderPassBeginInfo.clearValueCount = clearValues.size();
+        renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
         renderPassBeginInfo.pClearValues = clearValues.data();
 
         vkCmdBeginRenderPass(mPrimaryShadowCmdBuffer[nextIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -767,7 +788,7 @@ public:
         renderPassBeginInfo.renderArea.offset.x = 0;
         renderPassBeginInfo.renderArea.offset.y = 0;
         renderPassBeginInfo.renderArea.extent = mDisplaySize;
-        renderPassBeginInfo.clearValueCount = clearValues.size();
+        renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
         renderPassBeginInfo.pClearValues = clearValues.data();
 
         vkCmdBeginRenderPass(mPrimaryCmdBuffer[nextIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -812,7 +833,7 @@ public:
             submitInfo.waitSemaphoreCount = 1;
             submitInfo.pWaitSemaphores = &mImageAvailableSemaphore;
             submitInfo.pWaitDstStageMask = waitStages;
-            submitInfo.commandBufferCount = commandbuffers.size();
+            submitInfo.commandBufferCount = static_cast<uint32_t>(commandbuffers.size());
             submitInfo.pCommandBuffers = commandbuffers.data();
             submitInfo.signalSemaphoreCount = 1;
             submitInfo.pSignalSemaphores = &mShadowMapAvailableSemaphore;
@@ -851,7 +872,7 @@ public:
             submitInfo.waitSemaphoreCount = 1;
             submitInfo.pWaitSemaphores = &mShadowMapAvailableSemaphore;
             submitInfo.pWaitDstStageMask = waitStages;
-            submitInfo.commandBufferCount = commandbuffers.size();
+            submitInfo.commandBufferCount = static_cast<uint32_t>(commandbuffers.size());
             submitInfo.pCommandBuffers = commandbuffers.data();
             submitInfo.signalSemaphoreCount = 1;
             submitInfo.pSignalSemaphores = &mRenderFinishedSemaphore;
@@ -960,7 +981,6 @@ public:
     VkSemaphore         mShadowMapAvailableSemaphore;
     VkSemaphore         mRenderFinishedSemaphore;
 
-    engine*           mEngine{ nullptr };
     std::vector<Model*>            mModels;
     std::unique_ptr<ShadowMap>     mShadowMap;
 };

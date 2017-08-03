@@ -12,7 +12,7 @@ public:
     static void create();
     static VKRenderer &getInstance();
 
-    virtual void init(struct engine* engine) = 0;
+    virtual void init(void* platform) = 0;
 
     virtual VkDevice &getDevice() = 0;
     virtual VkPhysicalDevice &getPhysicalDevice() = 0;

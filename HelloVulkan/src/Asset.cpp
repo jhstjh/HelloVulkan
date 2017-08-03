@@ -44,9 +44,60 @@ struct Asset::Impl
     AAsset* mAsset{ nullptr };
 };
 
-void Asset::setAssetManager(void* assetManager)
+#else
+
+#include <cstdio>
+#include <direct.h>
+
+struct Asset::Impl
 {
-    gAssetManager = reinterpret_cast<AAssetManager*>(assetManager);
+    Impl(std::string filename, uint32_t /*openMode*/)
+    {
+        char cwd[256];
+        _getcwd(cwd, 256);
+
+        filename = "assets/" + filename;
+        mAsset = fopen(filename.c_str(), "rb");
+        fseek(mAsset, 0L, SEEK_END);
+        mSize = ftell(mAsset);
+        fseek(mAsset, 0L, SEEK_SET);
+    }
+
+    ~Impl()
+    {
+        if (mAsset)
+        {
+            close();
+        }
+    }
+
+    uint32_t getLength()
+    {
+        return mSize;
+    }
+
+    void read(uint8_t* data, uint32_t size)
+    {
+        fread(data, size, 1, mAsset);
+    }
+
+    void close()
+    {
+        assert(mAsset);
+        fclose(mAsset);
+        mAsset = nullptr;
+    }
+
+    FILE* mAsset{ nullptr };
+    uint32_t mSize{ 0 };
+};
+
+
+#endif
+
+void Asset::setAssetManager(void* /*assetManager*/)
+{
+    
 }
 
 Asset::Asset(std::string filename, uint32_t openMode)
@@ -73,5 +124,3 @@ void Asset::close()
 {
     mImpl->close();
 }
-
-#endif

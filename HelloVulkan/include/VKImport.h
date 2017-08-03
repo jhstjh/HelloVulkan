@@ -1,7 +1,4 @@
-#ifdef _ANDROID
 VK_IMPORT(vkCreateAndroidSurfaceKHR);
-#endif
-
 VK_IMPORT(vkEnumerateInstanceExtensionProperties);
 VK_IMPORT(vkEnumerateInstanceLayerProperties);
 VK_IMPORT(vkCreateInstance);

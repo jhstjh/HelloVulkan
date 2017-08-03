@@ -7,8 +7,11 @@
 #include "ShadowMap.h"
 #include "VKRenderer.h"
 
+#pragma warning( push )  
+#pragma warning( disable : 4100 )  
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#pragma warning( pop )   
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
@@ -64,7 +67,7 @@ Model::Model(std::string name, float offsetZ)
         VkSubresourceLayout stagingImageLayout;
         vkGetImageSubresourceLayout(VKRenderer::getInstance().getDevice(), mStagingImage, &subresource, &stagingImageLayout);
 
-        if (stagingImageLayout.rowPitch = texWidth * 4)
+        if (stagingImageLayout.rowPitch == texWidth * 4)
         {
             memcpy(data, pixels, imageSize);
         }
@@ -174,7 +177,7 @@ Model::Model(std::string name, float offsetZ)
                 };
 
                 mVertices.push_back(vertex);
-                mIndices.push_back(mIndices.size());
+                mIndices.push_back(static_cast<uint32_t>(mIndices.size()));
             }
         }
     }
@@ -269,7 +272,7 @@ Model::Model(std::string name, float offsetZ)
 
         VkDescriptorSetLayoutCreateInfo layoutInfo = {};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = bindings.size();
+        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
         layoutInfo.pBindings = bindings.data();
 
         auto result = vkCreateDescriptorSetLayout(VKRenderer::getInstance().getDevice(), &layoutInfo, nullptr, &mDescriptorSetLayout);
@@ -288,7 +291,7 @@ Model::Model(std::string name, float offsetZ)
 
         VkDescriptorPoolCreateInfo poolInfo = {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.poolSizeCount = poolSizes.size();
+        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
         poolInfo.maxSets = 1;
 
@@ -346,7 +349,7 @@ Model::Model(std::string name, float offsetZ)
         descriptorWrites[2].descriptorCount = 1;
         descriptorWrites[2].pImageInfo = &shadowImageInfo;
 
-        vkUpdateDescriptorSets(VKRenderer::getInstance().getDevice(), descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(VKRenderer::getInstance().getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 
     // create shadow descriptor set layout
@@ -362,7 +365,7 @@ Model::Model(std::string name, float offsetZ)
 
         VkDescriptorSetLayoutCreateInfo layoutInfo = {};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = bindings.size();
+        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
         layoutInfo.pBindings = bindings.data();
 
         auto result = vkCreateDescriptorSetLayout(VKRenderer::getInstance().getDevice(), &layoutInfo, nullptr, &mShadowDescriptorSetLayout);
@@ -377,7 +380,7 @@ Model::Model(std::string name, float offsetZ)
 
         VkDescriptorPoolCreateInfo poolInfo = {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.poolSizeCount = poolSizes.size();
+        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
         poolInfo.maxSets = 1;
 
@@ -409,7 +412,7 @@ Model::Model(std::string name, float offsetZ)
         descriptorWrites[0].descriptorCount = 1;
         descriptorWrites[0].pBufferInfo = &bufferInfo;
 
-        vkUpdateDescriptorSets(VKRenderer::getInstance().getDevice(), descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(VKRenderer::getInstance().getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 
     // create graphics pipeline
@@ -557,7 +560,7 @@ Model::Model(std::string name, float offsetZ)
         vertexInputInfo.pNext = nullptr;
         vertexInputInfo.vertexBindingDescriptionCount = 1;
         vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-        vertexInputInfo.vertexAttributeDescriptionCount = attributeDescriptions.size();
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
         vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
         VkPipelineCacheCreateInfo pipelineCacheInfo;
@@ -644,7 +647,7 @@ Model::Model(std::string name, float offsetZ)
             renderPassBeginInfo.renderArea.offset.x = 0;
             renderPassBeginInfo.renderArea.offset.y = 0;
             renderPassBeginInfo.renderArea.extent = displaySize;
-            renderPassBeginInfo.clearValueCount = clearValues.size();
+            renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
             renderPassBeginInfo.pClearValues = clearValues.data();
 
             vkCmdBeginRenderPass(mCmdBuffer[bufferIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -658,7 +661,7 @@ Model::Model(std::string name, float offsetZ)
             vkCmdBindIndexBuffer(mCmdBuffer[bufferIndex], mIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdBindDescriptorSets(mCmdBuffer[bufferIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, mPLayout, 0, 1, &mDescriptorSet, 0, nullptr);
 
-            vkCmdDrawIndexed(mCmdBuffer[bufferIndex], mIndices.size(), 1, 0, 0, 0);
+            vkCmdDrawIndexed(mCmdBuffer[bufferIndex], static_cast<uint32_t>(mIndices.size()), 1, 0, 0, 0);
 
             vkCmdEndRenderPass(mCmdBuffer[bufferIndex]);
             result = vkEndCommandBuffer(mCmdBuffer[bufferIndex]);
@@ -777,7 +780,7 @@ Model::Model(std::string name, float offsetZ)
         vertexInputInfo.pNext = nullptr;
         vertexInputInfo.vertexBindingDescriptionCount = 1;
         vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-        vertexInputInfo.vertexAttributeDescriptionCount = attributeDescriptions.size();
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
         vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
         VkPipelineCacheCreateInfo pipelineCacheInfo{};
@@ -865,7 +868,7 @@ Model::Model(std::string name, float offsetZ)
             renderPassBeginInfo.renderArea.offset.y = 0;
             renderPassBeginInfo.renderArea.extent.width = 2048;
             renderPassBeginInfo.renderArea.extent.height = 2048;
-            renderPassBeginInfo.clearValueCount = clearValues.size();
+            renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
             renderPassBeginInfo.pClearValues = clearValues.data();
 
             vkCmdBeginRenderPass(mShadowCmdBuffer[bufferIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -879,7 +882,7 @@ Model::Model(std::string name, float offsetZ)
             vkCmdBindIndexBuffer(mShadowCmdBuffer[bufferIndex], mIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdBindDescriptorSets(mShadowCmdBuffer[bufferIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, mShadowPLayout, 0, 1, &mShadowDescriptorSet, 0, nullptr);
 
-            vkCmdDrawIndexed(mShadowCmdBuffer[bufferIndex], mIndices.size(), 1, 0, 0, 0);
+            vkCmdDrawIndexed(mShadowCmdBuffer[bufferIndex], static_cast<uint32_t>(mIndices.size()), 1, 0, 0, 0);
 
             vkCmdEndRenderPass(mShadowCmdBuffer[bufferIndex]);
             result = vkEndCommandBuffer(mShadowCmdBuffer[bufferIndex]);
@@ -908,7 +911,7 @@ void Model::update()
 
     UniformBufferObject ubo = {};
     mat4 transMat = Matrix<float, 4>::FromTranslationVector(Vector<float, 3>{ 0, 0, mOffsetZ });
-    auto rotMat = Matrix<float, 3>::RotationY(time * 90.f / 180.f * 3.1415926);
+    auto rotMat = Matrix<float, 3>::RotationY(time * 90.f / 180.f * 3.1415926f);
     ubo.model = transMat * mat4::FromRotationMatrix(rotMat);
 
     // offscreen shadow ubo
@@ -941,7 +944,7 @@ void Model::update()
     // on screen ubo
     ubo.shadowTransform = T * ubo.proj * ubo.view * ubo.model;
     ubo.view = mat4::LookAt(vec3(0.0f, 0.0f, 0.0f), vec3(4.0f, 4.0f, 4.0f), vec3(0.0f, 1.0f, 0.0f), 1.0f);
-    ubo.proj = mat4::Perspective((45.0f) / 180.f * 3.1415926, (float)displaySize.width / (float)displaySize.height, 0.1f, 10.0f);
+    ubo.proj = mat4::Perspective((45.0f) / 180.f * 3.1415926f, (float)displaySize.width / (float)displaySize.height, 0.1f, 10.0f);
     ubo.proj(1, 1) *= -1; 
 
     vkMapMemory(VKRenderer::getInstance().getDevice(), mUniformStagingBufferMemory, 0, sizeof(ubo), 0, &data);
