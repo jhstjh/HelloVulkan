@@ -47,7 +47,7 @@
     <ClCompile>
       <CppLanguageStandard>gnu++1y</CppLanguageStandard>
       <PreprocessorDefinitions>ANDROID;DISABLE_IMPORTGL;VK_USE_PLATFORM_ANDROID_KHR</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)include\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>android;EGL;GLESv1_CM</AdditionalDependencies>
@@ -64,7 +64,7 @@ compileShaders.cmd</PreBuildCommand>
     <ClCompile>
       <CppLanguageStandard>gnu++1y</CppLanguageStandard>
       <PreprocessorDefinitions>ANDROID;DISABLE_IMPORTGL;</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)include\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>android;EGL;GLESv1_CM</AdditionalDependencies>
@@ -81,7 +81,7 @@ compileShaders.cmd</PreBuildCommand>
     <ClCompile>
       <CppLanguageStandard>gnu++1y</CppLanguageStandard>
       <PreprocessorDefinitions>ANDROID;DISABLE_IMPORTGL;</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)include\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>android;EGL;GLESv1_CM</AdditionalDependencies>
@@ -99,33 +99,36 @@ compileShaders.cmd</PreBuildCommand>
     <AndroidBuild Include="res\values\strings.xml" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="jni\Asset.cpp" />
-    <ClCompile Include="jni\main.cpp" />
-    <ClCompile Include="jni\Model.cpp" />
-    <ClCompile Include="jni\ShadowMap.cpp" />
-    <ClCompile Include="jni\VKFuncs.cpp" />
-    <ClCompile Include="jni\VKRenderer.cpp" />
     <ClCompile Include="native_app_glue\android_native_app_glue.c" />
+    <ClCompile Include="src\Asset.cpp" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\Model.cpp" />
+    <ClCompile Include="src\ShadowMap.cpp" />
+    <ClCompile Include="src\VKFuncs.cpp" />
+    <ClCompile Include="src\VKRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="jni\Asset.h" />
-    <ClInclude Include="jni\engine.h" />
-    <ClInclude Include="jni\ext\stb_image.h" />
-    <ClInclude Include="jni\mathfu\constants.h" />
-    <ClInclude Include="jni\mathfu\glsl_mappings.h" />
-    <ClInclude Include="jni\mathfu\matrix.h" />
-    <ClInclude Include="jni\mathfu\matrix_4x4.h" />
-    <ClInclude Include="jni\mathfu\quaternion.h" />
-    <ClInclude Include="jni\mathfu\utilities.h" />
-    <ClInclude Include="jni\mathfu\vector.h" />
-    <ClInclude Include="jni\mathfu\vector_2.h" />
-    <ClInclude Include="jni\mathfu\vector_3.h" />
-    <ClInclude Include="jni\mathfu\vector_4.h" />
-    <ClInclude Include="jni\Model.h" />
-    <ClInclude Include="jni\ShadowMap.h" />
-    <ClInclude Include="jni\VKFuncs.h" />
-    <ClInclude Include="jni\VKImport.h" />
-    <ClInclude Include="jni\VKRenderer.h" />
+    <ClInclude Include="include\Asset.h" />
+    <ClInclude Include="include\engine.h" />
+    <ClInclude Include="include\ext\mathfu\constants.h" />
+    <ClInclude Include="include\ext\mathfu\glsl_mappings.h" />
+    <ClInclude Include="include\ext\mathfu\matrix.h" />
+    <ClInclude Include="include\ext\mathfu\matrix_4x4.h" />
+    <ClInclude Include="include\ext\mathfu\quaternion.h" />
+    <ClInclude Include="include\ext\mathfu\utilities.h" />
+    <ClInclude Include="include\ext\mathfu\vector.h" />
+    <ClInclude Include="include\ext\mathfu\vector_2.h" />
+    <ClInclude Include="include\ext\mathfu\vector_3.h" />
+    <ClInclude Include="include\ext\mathfu\vector_4.h" />
+    <ClInclude Include="include\ext\stb_image.h" />
+    <ClInclude Include="include\ext\tiny_obj_loader.h" />
+    <ClInclude Include="include\Model.h" />
+    <ClInclude Include="include\nosdk\vulkan\vk_platform.h" />
+    <ClInclude Include="include\nosdk\vulkan\vulkan.h" />
+    <ClInclude Include="include\ShadowMap.h" />
+    <ClInclude Include="include\VKFuncs.h" />
+    <ClInclude Include="include\VKImport.h" />
+    <ClInclude Include="include\VKRenderer.h" />
     <ClInclude Include="native_app_glue\android_native_app_glue.h" />
   </ItemGroup>
   <ItemGroup>

@@ -1,9 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="jni">
-      <UniqueIdentifier>8f8b2780-4a15-4622-9dbe-db71ac201852</UniqueIdentifier>
-    </Filter>
     <Filter Include="res">
       <UniqueIdentifier>4701e0e2-b34b-4768-81db-8dc92e21196d</UniqueIdentifier>
     </Filter>
@@ -19,11 +16,26 @@
     <Filter Include="shaders">
       <UniqueIdentifier>{126221f4-0947-43ca-9566-932102e238fd}</UniqueIdentifier>
     </Filter>
-    <Filter Include="jni\mathfu">
-      <UniqueIdentifier>{ced9d065-134f-478c-ae68-198435cdbf16}</UniqueIdentifier>
-    </Filter>
     <Filter Include="texture">
       <UniqueIdentifier>{813325a0-82ab-4c6d-a91b-179befdf1dc9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include">
+      <UniqueIdentifier>{dad4095b-cb9d-41ea-a3e7-5230d9d9ce67}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src">
+      <UniqueIdentifier>{142f5df5-f4a1-4254-8e68-75bab064cb36}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\ext">
+      <UniqueIdentifier>{3e143a2d-6dd0-4638-8f7e-f36db4f22a06}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\nosdk">
+      <UniqueIdentifier>{f1688580-2a95-4027-b23f-04252324d209}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\nosdk\vulkan">
+      <UniqueIdentifier>{c6b5f23d-c105-4ef2-8f49-3e9e9500c817}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\ext\mathfu">
+      <UniqueIdentifier>{6640af2e-b0e5-455b-bbce-b0aff165d7ea}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -33,85 +45,94 @@
     </AndroidBuild>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="jni\main.cpp">
-      <Filter>jni</Filter>
-    </ClCompile>
     <ClCompile Include="native_app_glue\android_native_app_glue.c">
       <Filter>HelloVulkan\native_app_glue</Filter>
     </ClCompile>
-    <ClCompile Include="jni\VKFuncs.cpp">
-      <Filter>jni</Filter>
+    <ClCompile Include="src\Model.cpp">
+      <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="jni\VKRenderer.cpp">
-      <Filter>jni</Filter>
+    <ClCompile Include="src\ShadowMap.cpp">
+      <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="jni\Model.cpp">
-      <Filter>jni</Filter>
+    <ClCompile Include="src\VKFuncs.cpp">
+      <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="jni\ShadowMap.cpp">
-      <Filter>jni</Filter>
+    <ClCompile Include="src\VKRenderer.cpp">
+      <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="jni\Asset.cpp">
-      <Filter>jni</Filter>
+    <ClCompile Include="src\Asset.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main.cpp">
+      <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="native_app_glue\android_native_app_glue.h">
       <Filter>HelloVulkan\native_app_glue</Filter>
     </ClInclude>
-    <ClInclude Include="jni\VKImport.h">
-      <Filter>jni</Filter>
+    <ClInclude Include="include\nosdk\vulkan\vk_platform.h">
+      <Filter>include\nosdk\vulkan</Filter>
     </ClInclude>
-    <ClInclude Include="jni\VKFuncs.h">
-      <Filter>jni</Filter>
+    <ClInclude Include="include\nosdk\vulkan\vulkan.h">
+      <Filter>include\nosdk\vulkan</Filter>
     </ClInclude>
-    <ClInclude Include="jni\mathfu\quaternion.h">
-      <Filter>jni\mathfu</Filter>
+    <ClInclude Include="include\ext\mathfu\matrix.h">
+      <Filter>include\ext\mathfu</Filter>
     </ClInclude>
-    <ClInclude Include="jni\mathfu\utilities.h">
-      <Filter>jni\mathfu</Filter>
+    <ClInclude Include="include\ext\mathfu\matrix_4x4.h">
+      <Filter>include\ext\mathfu</Filter>
     </ClInclude>
-    <ClInclude Include="jni\mathfu\vector.h">
-      <Filter>jni\mathfu</Filter>
+    <ClInclude Include="include\ext\mathfu\quaternion.h">
+      <Filter>include\ext\mathfu</Filter>
     </ClInclude>
-    <ClInclude Include="jni\mathfu\vector_2.h">
-      <Filter>jni\mathfu</Filter>
+    <ClInclude Include="include\ext\mathfu\utilities.h">
+      <Filter>include\ext\mathfu</Filter>
     </ClInclude>
-    <ClInclude Include="jni\mathfu\vector_3.h">
-      <Filter>jni\mathfu</Filter>
+    <ClInclude Include="include\ext\mathfu\vector.h">
+      <Filter>include\ext\mathfu</Filter>
     </ClInclude>
-    <ClInclude Include="jni\mathfu\vector_4.h">
-      <Filter>jni\mathfu</Filter>
+    <ClInclude Include="include\ext\mathfu\vector_2.h">
+      <Filter>include\ext\mathfu</Filter>
     </ClInclude>
-    <ClInclude Include="jni\mathfu\constants.h">
-      <Filter>jni\mathfu</Filter>
+    <ClInclude Include="include\ext\mathfu\vector_3.h">
+      <Filter>include\ext\mathfu</Filter>
     </ClInclude>
-    <ClInclude Include="jni\mathfu\glsl_mappings.h">
-      <Filter>jni\mathfu</Filter>
+    <ClInclude Include="include\ext\mathfu\vector_4.h">
+      <Filter>include\ext\mathfu</Filter>
     </ClInclude>
-    <ClInclude Include="jni\mathfu\matrix.h">
-      <Filter>jni\mathfu</Filter>
+    <ClInclude Include="include\ext\mathfu\constants.h">
+      <Filter>include\ext\mathfu</Filter>
     </ClInclude>
-    <ClInclude Include="jni\mathfu\matrix_4x4.h">
-      <Filter>jni\mathfu</Filter>
+    <ClInclude Include="include\ext\mathfu\glsl_mappings.h">
+      <Filter>include\ext\mathfu</Filter>
     </ClInclude>
-    <ClInclude Include="jni\ext\stb_image.h">
-      <Filter>jni</Filter>
+    <ClInclude Include="include\ext\stb_image.h">
+      <Filter>include\ext</Filter>
     </ClInclude>
-    <ClInclude Include="jni\VKRenderer.h">
-      <Filter>jni</Filter>
+    <ClInclude Include="include\ext\tiny_obj_loader.h">
+      <Filter>include\ext</Filter>
     </ClInclude>
-    <ClInclude Include="jni\engine.h">
-      <Filter>jni</Filter>
+    <ClInclude Include="include\Asset.h">
+      <Filter>include</Filter>
     </ClInclude>
-    <ClInclude Include="jni\Model.h">
-      <Filter>jni</Filter>
+    <ClInclude Include="include\engine.h">
+      <Filter>include</Filter>
     </ClInclude>
-    <ClInclude Include="jni\ShadowMap.h">
-      <Filter>jni</Filter>
+    <ClInclude Include="include\Model.h">
+      <Filter>include</Filter>
     </ClInclude>
-    <ClInclude Include="jni\Asset.h">
-      <Filter>jni</Filter>
+    <ClInclude Include="include\ShadowMap.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\VKFuncs.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\VKImport.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\VKRenderer.h">
+      <Filter>include</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

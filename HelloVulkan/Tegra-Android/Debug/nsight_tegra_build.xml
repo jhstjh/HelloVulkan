@@ -5,7 +5,7 @@
   <import file="C:\Users\jshentu\Documents\HelloVulkan\HelloVulkan\nsight_tegra_build_overrides.xml" optional="true" />
   <!--REGION-BEGIN: The following properties prevents Nsight Tegra from needing to modify user property files.  Setting them here will ensure they always match Visual Studio and allows users to build without needing to check out version controlled files.-->
   <property name="sdk.dir" value="C:\NVPACK\android-sdk-windows" />
-  <property name="source.dir" value="" />
+  <property name="source.dir" value="C:\\Users\\jshentu\\Documents\\HelloVulkan\\HelloVulkan\\src" />
   <property name="target" value="android-23" />
   <!--REGION-END-->
   <!--REGION-BEGIN: The following properties prevents Nsight Tegra from needing to modify user manifest files.  Setting them here will ensure they always match Visual Studio and allows users to build without needing to check out version controlled files.-->
