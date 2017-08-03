@@ -22,6 +22,11 @@ public:
         return mShadowRenderPass;
     }
 
+    VkRenderPass getRenderPassClear()
+    {
+        return mShadowRenderPassClear;
+    }
+
     VkFramebuffer getFramebuffer()
     {
         return mShadowDepthFramebuffer;

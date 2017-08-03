@@ -428,10 +428,14 @@ public:
         result = vkCreateSemaphore(VKRenderer::getInstance().getDevice(), &semaphoreCreateInfo, nullptr, &mImageAvailableSemaphore);
         assert(result == VK_SUCCESS);
 
+        result = vkCreateSemaphore(VKRenderer::getInstance().getDevice(), &semaphoreCreateInfo, nullptr, &mShadowMapAvailableSemaphore);
+        assert(result == VK_SUCCESS);
+
         result = vkCreateSemaphore(VKRenderer::getInstance().getDevice(), &semaphoreCreateInfo, nullptr, &mRenderFinishedSemaphore);
         assert(result == VK_SUCCESS);
 
         mPrimaryCmdBuffer.resize(mSwapchainLength);
+        mPrimaryShadowCmdBuffer.resize(mSwapchainLength);
         for (uint32_t bufferIndex = 0; bufferIndex < mSwapchainLength; bufferIndex++)
         {
             VkCommandBufferAllocateInfo cmdBufferAllocationInfo{};
@@ -442,6 +446,9 @@ public:
             cmdBufferAllocationInfo.commandBufferCount = 1;
 
             result = vkAllocateCommandBuffers(mDevice, &cmdBufferAllocationInfo, &mPrimaryCmdBuffer[bufferIndex]);
+            assert(result == VK_SUCCESS);
+
+            result = vkAllocateCommandBuffers(mDevice, &cmdBufferAllocationInfo, &mPrimaryShadowCmdBuffer[bufferIndex]);
             assert(result == VK_SUCCESS);
         }
 
@@ -719,12 +726,35 @@ public:
         vkBindBufferMemory(mDevice, buffer, bufferMemory, 0);
     };
 
+    void clearShadowMap(uint32_t nextIndex)
+    {
+        std::array<VkClearValue, 1> clearValues = {};
+        clearValues[0].depthStencil = { 1.0f, 0 };
+
+        // Clear color and depth
+        VkRenderPassBeginInfo renderPassBeginInfo{};
+        renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassBeginInfo.pNext = nullptr;
+        renderPassBeginInfo.renderPass = mShadowMap->getRenderPassClear();
+        renderPassBeginInfo.framebuffer = mShadowMap->getFramebuffer();
+        renderPassBeginInfo.renderArea.offset.x = 0;
+        renderPassBeginInfo.renderArea.offset.y = 0;
+        renderPassBeginInfo.renderArea.extent.width = 2048;
+        renderPassBeginInfo.renderArea.extent.height = 2048;
+        renderPassBeginInfo.clearValueCount = clearValues.size();
+        renderPassBeginInfo.pClearValues = clearValues.data();
+
+        vkCmdBeginRenderPass(mPrimaryShadowCmdBuffer[nextIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdEndRenderPass(mPrimaryShadowCmdBuffer[nextIndex]);
+    }
+
     void clearFrame(uint32_t nextIndex)
     {
         std::array<VkClearValue, 2> clearValues = {};
         clearValues[0].color = { 0.3f, 0.3f, 0.3f, 1.0f };
         clearValues[1].depthStencil = { 1.0f, 0 };
 
+        // Clear color and depth
         VkRenderPassBeginInfo renderPassBeginInfo{};
         renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassBeginInfo.pNext = nullptr;
@@ -748,54 +778,97 @@ public:
         VkResult result = vkAcquireNextImageKHR(mDevice, mSwapchain, 0xFFFFFFFFFFFFFFFFull, mImageAvailableSemaphore, VK_NULL_HANDLE, &nextIndex);
         assert(result == VK_SUCCESS);
 
-        VkCommandBufferBeginInfo cmdBufferBeginInfo{};
-        cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        cmdBufferBeginInfo.pNext = nullptr;
-        cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-        cmdBufferBeginInfo.pInheritanceInfo = nullptr;
-
-        result = vkBeginCommandBuffer(mPrimaryCmdBuffer[nextIndex], &cmdBufferBeginInfo);
-        assert(result == VK_SUCCESS);
-
-        clearFrame(nextIndex);
-
-        result = vkEndCommandBuffer(mPrimaryCmdBuffer[nextIndex]);
-        assert(result == VK_SUCCESS);
-
-        std::vector<VkCommandBuffer> commandbuffers;
-        commandbuffers.push_back(mPrimaryCmdBuffer[nextIndex]);
-        for (auto &model : mModels)
         {
-            commandbuffers.push_back(model->getCommandBuffer(nextIndex));
+            VkCommandBufferBeginInfo cmdBufferBeginInfo{};
+            cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            cmdBufferBeginInfo.pNext = nullptr;
+            cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+            cmdBufferBeginInfo.pInheritanceInfo = nullptr;
+
+            result = vkBeginCommandBuffer(mPrimaryShadowCmdBuffer[nextIndex], &cmdBufferBeginInfo);
+            assert(result == VK_SUCCESS);
+
+            clearShadowMap(nextIndex);
+
+            result = vkEndCommandBuffer(mPrimaryShadowCmdBuffer[nextIndex]);
+            assert(result == VK_SUCCESS);
+
+            std::vector<VkCommandBuffer> commandbuffers;
+            commandbuffers.push_back(mPrimaryShadowCmdBuffer[nextIndex]);
+            for (auto &model : mModels)
+            {
+                commandbuffers.push_back(model->getShadowCommandBuffer(nextIndex));
+            }
+
+            VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.pNext = nullptr;
+            submitInfo.waitSemaphoreCount = 1;
+            submitInfo.pWaitSemaphores = &mImageAvailableSemaphore;
+            submitInfo.pWaitDstStageMask = waitStages;
+            submitInfo.commandBufferCount = commandbuffers.size();
+            submitInfo.pCommandBuffers = commandbuffers.data();
+            submitInfo.signalSemaphoreCount = 1;
+            submitInfo.pSignalSemaphores = &mShadowMapAvailableSemaphore;
+
+            result = vkQueueSubmit(mQueue, 1, &submitInfo, VK_NULL_HANDLE);
+            assert(result == VK_SUCCESS);
         }
 
-        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+        {
+            VkCommandBufferBeginInfo cmdBufferBeginInfo{};
+            cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            cmdBufferBeginInfo.pNext = nullptr;
+            cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+            cmdBufferBeginInfo.pInheritanceInfo = nullptr;
 
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.pNext = nullptr;
-        submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = &mImageAvailableSemaphore;
-        submitInfo.pWaitDstStageMask = waitStages;
-        submitInfo.commandBufferCount = commandbuffers.size();
-        submitInfo.pCommandBuffers = commandbuffers.data();
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = &mRenderFinishedSemaphore;
+            result = vkBeginCommandBuffer(mPrimaryCmdBuffer[nextIndex], &cmdBufferBeginInfo);
+            assert(result == VK_SUCCESS);
 
-        result = vkQueueSubmit(mQueue, 1, &submitInfo, VK_NULL_HANDLE);
-        assert(result == VK_SUCCESS);
+            clearFrame(nextIndex);
 
-        VkPresentInfoKHR presentInfo = {};
-        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        presentInfo.pNext = nullptr;
-        presentInfo.swapchainCount = 1;
-        presentInfo.pSwapchains = &mSwapchain;
-        presentInfo.pImageIndices = &nextIndex;
-        presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = &mRenderFinishedSemaphore;
-        presentInfo.pResults = nullptr;
+            result = vkEndCommandBuffer(mPrimaryCmdBuffer[nextIndex]);
+            assert(result == VK_SUCCESS);
 
-        vkQueuePresentKHR(mQueue, &presentInfo);
+            std::vector<VkCommandBuffer> commandbuffers;
+            commandbuffers.push_back(mPrimaryCmdBuffer[nextIndex]);
+            for (auto &model : mModels)
+            {
+                commandbuffers.push_back(model->getCommandBuffer(nextIndex));
+            }
+
+            VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.pNext = nullptr;
+            submitInfo.waitSemaphoreCount = 1;
+            submitInfo.pWaitSemaphores = &mShadowMapAvailableSemaphore;
+            submitInfo.pWaitDstStageMask = waitStages;
+            submitInfo.commandBufferCount = commandbuffers.size();
+            submitInfo.pCommandBuffers = commandbuffers.data();
+            submitInfo.signalSemaphoreCount = 1;
+            submitInfo.pSignalSemaphores = &mRenderFinishedSemaphore;
+
+            result = vkQueueSubmit(mQueue, 1, &submitInfo, VK_NULL_HANDLE);
+            assert(result == VK_SUCCESS);
+        }
+
+        {
+            VkPresentInfoKHR presentInfo = {};
+            presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+            presentInfo.pNext = nullptr;
+            presentInfo.swapchainCount = 1;
+            presentInfo.pSwapchains = &mSwapchain;
+            presentInfo.pImageIndices = &nextIndex;
+            presentInfo.waitSemaphoreCount = 1;
+            presentInfo.pWaitSemaphores = &mRenderFinishedSemaphore;
+            presentInfo.pResults = nullptr;
+
+            vkQueuePresentKHR(mQueue, &presentInfo);
+        }
     }
 
     void update() final
@@ -874,11 +947,13 @@ public:
     VkRenderPass        mRenderPassClear;
     VkCommandPool       mCmdPool;
     std::vector<VkCommandBuffer>    mPrimaryCmdBuffer;
+    std::vector<VkCommandBuffer>    mPrimaryShadowCmdBuffer;
     VkImage             mDepthImage;
     VkDeviceMemory      mDepthImageMemory;
     VkImageView         mDepthImageView;
 
     VkSemaphore         mImageAvailableSemaphore;
+    VkSemaphore         mShadowMapAvailableSemaphore;
     VkSemaphore         mRenderFinishedSemaphore;
 
     engine*           mEngine{ nullptr };

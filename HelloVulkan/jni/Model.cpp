@@ -27,6 +27,7 @@ struct UniformBufferObject
     mat4 model;
     mat4 view;
     mat4 proj;
+    mat4 shadowTransform;
 };
 
 Model::Model(std::string name, struct engine* engine, float offsetZ)
@@ -915,11 +916,40 @@ void Model::update()
     mat4 transMat = Matrix<float, 4>::FromTranslationVector(Vector<float, 3>{ 0, 0, mOffsetZ });
     auto rotMat = Matrix<float, 3>::RotationY(time * 90.f / 180.f * 3.1415926);
     ubo.model = transMat * mat4::FromRotationMatrix(rotMat);
-    ubo.view = mat4::LookAt(vec3(0.0f, 0.0f, 0.0f), vec3(4.0f, 4.0f, 4.0f), vec3(0.0f, 1.0f, 0.0f), 1.0f);
-    ubo.proj = mat4::Perspective((45.0f) / 180.f * 3.1415926, (float)displaySize.width / (float)displaySize.height, 0.1f, 10.0f);
+
+    // offscreen shadow ubo
+    ubo.view = mat4::LookAt(vec3(0.0f, 0.0f, 0.0f), vec3(2.f, 2.f, -2.f), vec3(0.0f, 1.0f, 0.0f), 1.0f);
+    vec3 sphereCenterRS;
+    sphereCenterRS = ubo.view * vec3(0, 0, 0);
+    float l = sphereCenterRS.x() - 10;
+    float b = sphereCenterRS.y() - 10;
+    float n = sphereCenterRS.z() - 10;
+    float r = sphereCenterRS.x() + 10;
+    float t = sphereCenterRS.y() + 10;
+    float f = sphereCenterRS.z() + 10;
+    ubo.proj = mat4::Ortho(l, r, b, t, n, f, 1.f);
     ubo.proj(1, 1) *= -1;
 
     void* data;
+    vkMapMemory(VKRenderer::getInstance().getDevice(), mShadowUniformStagingBufferMemory, 0, sizeof(ubo), 0, &data);
+    assert(data);
+    memcpy(data, &ubo, sizeof(ubo));
+    vkUnmapMemory(VKRenderer::getInstance().getDevice(), mShadowUniformStagingBufferMemory);
+
+    VKRenderer::getInstance().copyBuffer(mShadowUniformStagingBuffer, mShadowUniformBuffer, sizeof(ubo));
+
+    mat4 T(
+        0.5f, 0.0f, 0.0f, 0.0f,
+        0.0f, 0.5f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.5f, 0.5f, 0.0f, 1.0f);
+
+    // on screen ubo
+    ubo.shadowTransform = T * ubo.proj * ubo.view * ubo.model;
+    ubo.view = mat4::LookAt(vec3(0.0f, 0.0f, 0.0f), vec3(4.0f, 4.0f, 4.0f), vec3(0.0f, 1.0f, 0.0f), 1.0f);
+    ubo.proj = mat4::Perspective((45.0f) / 180.f * 3.1415926, (float)displaySize.width / (float)displaySize.height, 0.1f, 10.0f);
+    ubo.proj(1, 1) *= -1; 
+
     vkMapMemory(VKRenderer::getInstance().getDevice(), mUniformStagingBufferMemory, 0, sizeof(ubo), 0, &data);
     assert(data);
     memcpy(data, &ubo, sizeof(ubo));
