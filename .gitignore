@@ -4,6 +4,7 @@
 *.opensdf
 *.suo
 *.bak
+*.spv
 
 /HelloVulkan/Tegra-Android/*
 
@@ -12,3 +13,4 @@
 /Tegra-Android/Debug/stripped_libHelloVulkan.so
 /*.opendb
 /HelloVulkan.VC.db
+/HelloVulkan/build/*

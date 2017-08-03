@@ -1,7 +1,7 @@
 #include <cassert>
 #include "Asset.h"
 
-#ifdef ANDROID
+#ifdef _ANDROID
 
 #include <android/asset_manager.h>
 
