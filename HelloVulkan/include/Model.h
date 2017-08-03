@@ -2,7 +2,6 @@
 #include <cstdint>
 #include <vector>
 #include "VKFuncs.h"
-#include "engine.h"
 #include "ext/mathfu/glsl_mappings.h"
 
 class Model
@@ -50,7 +49,7 @@ class Model
     };
 
 public:
-    Model(std::string name, struct engine* engine, float offsetZ);
+    Model(std::string name, float offsetZ);
     VkCommandBuffer &getCommandBuffer(uint32_t nextIndex);
     VkCommandBuffer &getShadowCommandBuffer(uint32_t nextIndex);
     void update();

@@ -1,3 +1,4 @@
+#ifdef _ANDROID
 #include <dlfcn.h>
 #include <assert.h>
 
@@ -38,3 +39,4 @@ void unloadVKLibs()
     if (gVulkan_so) dlclose(gVulkan_so);
     if (gVulkanValidation_so) dlclose(gVulkanValidation_so);
 }
+#endif

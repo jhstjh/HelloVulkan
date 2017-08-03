@@ -1,11 +1,15 @@
 #include <cassert>
 #include <memory>
 #include <vector>
-#include "engine.h"
+#include "Logging.h"
 #include "VKFuncs.h"
 #include "VKRenderer.h"
 #include "Model.h"
 #include "ShadowMap.h"
+
+#ifdef _ANDROID
+#include "engine.h"
+#endif
 
 namespace VK_RENDERER
 {
@@ -177,11 +181,15 @@ public:
         }
 
         // init surface
+#ifdef _ANDROID
         VkAndroidSurfaceCreateInfoKHR createInfo = { VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR };
         createInfo.window = engine->app->window;
 
         result = vkCreateAndroidSurfaceKHR(mInstance, &createInfo, nullptr, &mSurface);
         assert(result == VK_SUCCESS);
+#else
+#error
+#endif
 
         VkDeviceQueueCreateInfo queueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
         queueCreateInfo.queueFamilyIndex = 0;

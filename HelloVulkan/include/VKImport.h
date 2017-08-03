@@ -1,3 +1,7 @@
+#ifdef _ANDROID
+VK_IMPORT(vkCreateAndroidSurfaceKHR);
+#endif
+
 VK_IMPORT(vkEnumerateInstanceExtensionProperties);
 VK_IMPORT(vkEnumerateInstanceLayerProperties);
 VK_IMPORT(vkCreateInstance);
@@ -5,7 +9,6 @@ VK_IMPORT(vkGetInstanceProcAddr);
 VK_IMPORT(vkEnumeratePhysicalDevices);
 VK_IMPORT(vkEnumerateDeviceLayerProperties);
 VK_IMPORT(vkEnumerateDeviceExtensionProperties);
-VK_IMPORT(vkCreateAndroidSurfaceKHR);
 VK_IMPORT(vkGetPhysicalDeviceQueueFamilyProperties);
 VK_IMPORT(vkGetPhysicalDeviceSurfaceSupportKHR);
 VK_IMPORT(vkCreateDevice);

@@ -31,7 +31,7 @@ struct UniformBufferObject
     mat4 shadowTransform;
 };
 
-Model::Model(std::string name, struct engine* engine, float offsetZ)
+Model::Model(std::string name, float offsetZ)
     : mOffsetZ(offsetZ)
 {
     // create texture image

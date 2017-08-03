@@ -21,13 +21,20 @@ endmacro()
 #--------------------------------------------------
 # build targets
 #--------------------------------------------------
-set(CMAKE_SYSTEM_NAME Android)
-set(CMAKE_ANDROID_ARCH arm64-v8a)
-set(CMAKE_ANDROID_API_MIN 23)
-set(CMAKE_ANDROID_API 24)
-set(CMAKE_ANDROID_GUI 1)
-
-set(HV_ANDROID 1)
+if(HV_TARGET STREQUAL "x64-windows")
+	set(HV_MSVC 1)
+    set(HV_X64 1)
+    set(HV_WINDOWS 1)
+elseif(HV_TARGET STREQUAL "aarch64-android")
+	set(CMAKE_SYSTEM_NAME Android)
+	set(CMAKE_ANDROID_ARCH arm64-v8a)
+	set(CMAKE_ANDROID_API_MIN 23)
+	set(CMAKE_ANDROID_API 24)
+	set(CMAKE_ANDROID_GUI 1)
+	set(HV_ANDROID 1)
+else()
+    message(FATAL_ERROR "Unsupported target '${LINGCOD_TARGET}'")
+endif()
 
 #--------------------------------------------------
 # build configurations, global to all projects
@@ -135,12 +142,29 @@ file(GLOB HV_SOURCE
 	include/ext/*.h
 	include/ext/mathfu/*.h)
 	
+set(HV_INCLUDE_DIRS
+	include
+	include/ext)	
+	
 if (HV_ANDROID)
 	file(GLOB HV_PLATFORM_SOURCES 
 		include/nosdk/vulkan/*.h
-		native_app_glue/*.c
-		native_app_glue/*.h
+		android/*.c
+		android/*.cpp
+		android/*.h
 	)
+	
+	list(APPEND HV_INCLUDE_DIRS android)
+	
+endif()
+
+if (HV_WINDOWS)
+	file(GLOB HV_PLATFORM_SOURCES 
+		windows/*.h
+		windows/*.cpp
+	)
+	
+	list(APPEND HV_INCLUDE_DIRS windows)
 endif()
 
 list(APPEND HV_SOURCE ${HV_PLATFORM_SOURCES})
@@ -148,9 +172,6 @@ source_group_by_dir(HV_SOURCE)
 
 add_executable(HelloVulkan ${HV_SOURCE})
 
-set(HV_INCLUDE_DIRS
-	include
-	include/ext)
 target_include_directories(HelloVulkan PUBLIC ${HV_INCLUDE_DIRS})
 target_compile_definitions(HelloVulkan PRIVATE ${HV_DEFS})
 target_compile_options(HelloVulkan PRIVATE ${HV_FLAGS})

@@ -28,12 +28,10 @@
 #include <streambuf>
 #include <istream>
 
-#include "Asset.h"
 #include "engine.h"
+#include "Asset.h"
+#include "Logging.h"
 #include "VKRenderer.h"
-
-#include <android/asset_manager.h>
-#include <android/asset_manager_jni.h>
 
 #include "mathfu/glsl_mappings.h"
 
