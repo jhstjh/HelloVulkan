@@ -51,6 +51,9 @@
     <ClCompile Include="jni\ShadowMap.cpp">
       <Filter>jni</Filter>
     </ClCompile>
+    <ClCompile Include="jni\Asset.cpp">
+      <Filter>jni</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="native_app_glue\android_native_app_glue.h">
@@ -107,6 +110,9 @@
     <ClInclude Include="jni\ShadowMap.h">
       <Filter>jni</Filter>
     </ClInclude>
+    <ClInclude Include="jni\Asset.h">
+      <Filter>jni</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="assets\shader.frag">
@@ -119,12 +125,6 @@
   <ItemGroup>
     <None Include="assets\texture.jpg">
       <Filter>texture</Filter>
-    </None>
-    <None Include="assets\shadow.frag">
-      <Filter>shaders</Filter>
-    </None>
-    <None Include="assets\shadow.vert">
-      <Filter>shaders</Filter>
     </None>
   </ItemGroup>
 </Project>

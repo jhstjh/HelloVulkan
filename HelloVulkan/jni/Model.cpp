@@ -1,6 +1,7 @@
 #include <array>
 #include <chrono>
 #include <string>
+#include "Asset.h"
 #include "Model.h"
 #include "mathfu/glsl_mappings.h"
 #include "ShadowMap.h"
@@ -33,18 +34,15 @@ struct UniformBufferObject
 Model::Model(std::string name, struct engine* engine, float offsetZ)
     : mOffsetZ(offsetZ)
 {
-    auto assetManager = engine->app->activity->assetManager;
-
     // create texture image
     {
         std::string texturePath = "textures/" + name + ".jpg";
         int32_t texWidth, texHeight, texChannels;
-        AAsset* texFile = AAssetManager_open(assetManager, texturePath.c_str(), AASSET_MODE_UNKNOWN);
-        assert(texFile);
-        auto size = AAsset_getLength(texFile);
+        Asset texFile(texturePath, 0);
+        auto size = texFile.getLength();
         std::vector<uint8_t> texData(size);
-        AAsset_read(texFile, texData.data(), size);
-        AAsset_close(texFile);
+        texFile.read(texData.data(), size);
+        texFile.close();
 
         auto pixels = stbi_load_from_memory(texData.data(), size, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
         VkDeviceSize imageSize = texWidth * texHeight * 4;
@@ -136,12 +134,11 @@ Model::Model(std::string name, struct engine* engine, float offsetZ)
         std::string err;
 
         std::string modelPath = "models/" + name + ".obj";
-        AAsset* obj = AAssetManager_open(assetManager, modelPath.c_str(), AASSET_MODE_UNKNOWN);
-        assert(obj);
-        auto size = AAsset_getLength(obj);
+        Asset obj(modelPath, 0);
+        auto size = obj.getLength();
         std::vector<char> objData(size);
-        AAsset_read(obj, objData.data(), size);
-        AAsset_close(obj);
+        obj.read(objData.data(), size);
+        obj.close();
 
         vectorwrapbuf<char> databuf(objData);
         std::istream is(&databuf);
@@ -435,19 +432,17 @@ Model::Model(std::string name, struct engine* engine, float offsetZ)
         dynamicStateInfo.dynamicStateCount = 0;
         dynamicStateInfo.pDynamicStates = nullptr;
 
-        AAsset* vs = AAssetManager_open(assetManager, "shader.vert.spv", AASSET_MODE_UNKNOWN);
-        assert(vs);
-        auto size = AAsset_getLength(vs);
+        Asset vs("shader.vert.spv", 0);
+        auto size = vs.getLength();
         std::vector<uint8_t> vsData(size);
-        AAsset_read(vs, vsData.data(), size);
-        AAsset_close(vs);
+        vs.read(vsData.data(), size);
+        vs.close();
 
-        AAsset* fs = AAssetManager_open(assetManager, "shader.frag.spv", AASSET_MODE_UNKNOWN);
-        assert(fs);
-        size = AAsset_getLength(fs);
+        Asset fs("shader.frag.spv", 0);
+        size = fs.getLength();
         std::vector<uint8_t> fsData(size);
-        AAsset_read(fs, fsData.data(), size);
-        AAsset_close(fs);
+        fs.read(fsData.data(), size);
+        fs.close();
 
         VkShaderModule vertexShader, fragmentShader;
 
@@ -691,12 +686,11 @@ Model::Model(std::string name, struct engine* engine, float offsetZ)
         dynamicStateInfo.dynamicStateCount = 0;
         dynamicStateInfo.pDynamicStates = nullptr;
 
-        AAsset* vs = AAssetManager_open(assetManager, "shader.vert.spv", AASSET_MODE_UNKNOWN);
-        assert(vs);
-        auto size = AAsset_getLength(vs);
+        Asset vs("shader.vert.spv", 0);
+        auto size = vs.getLength();
         std::vector<uint8_t> vsData(size);
-        AAsset_read(vs, vsData.data(), size);
-        AAsset_close(vs);
+        vs.read(vsData.data(), size);
+        vs.close();
 
         VkShaderModule vertexShader;
 

@@ -46,7 +46,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Tegra-Android'">
     <ClCompile>
       <CppLanguageStandard>gnu++1y</CppLanguageStandard>
-      <PreprocessorDefinitions>DISABLE_IMPORTGL;VK_USE_PLATFORM_ANDROID_KHR</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ANDROID;DISABLE_IMPORTGL;VK_USE_PLATFORM_ANDROID_KHR</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -63,7 +63,7 @@ compileShaders.cmd</PreBuildCommand>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Tegra-Android'">
     <ClCompile>
       <CppLanguageStandard>gnu++1y</CppLanguageStandard>
-      <PreprocessorDefinitions>DISABLE_IMPORTGL</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ANDROID;DISABLE_IMPORTGL;</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -80,7 +80,7 @@ compileShaders.cmd</PreBuildCommand>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Shipping|Tegra-Android'">
     <ClCompile>
       <CppLanguageStandard>gnu++1y</CppLanguageStandard>
-      <PreprocessorDefinitions>DISABLE_IMPORTGL</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ANDROID;DISABLE_IMPORTGL;</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)jni\;$(ProjectDir)jni\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -99,6 +99,7 @@ compileShaders.cmd</PreBuildCommand>
     <AndroidBuild Include="res\values\strings.xml" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="jni\Asset.cpp" />
     <ClCompile Include="jni\main.cpp" />
     <ClCompile Include="jni\Model.cpp" />
     <ClCompile Include="jni\ShadowMap.cpp" />
@@ -107,6 +108,7 @@ compileShaders.cmd</PreBuildCommand>
     <ClCompile Include="native_app_glue\android_native_app_glue.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="jni\Asset.h" />
     <ClInclude Include="jni\engine.h" />
     <ClInclude Include="jni\ext\stb_image.h" />
     <ClInclude Include="jni\mathfu\constants.h" />
@@ -135,8 +137,6 @@ compileShaders.cmd</PreBuildCommand>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <None Include="assets\shadow.frag" />
-    <None Include="assets\shadow.vert" />
     <None Include="assets\texture.jpg" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -1,6 +1,3 @@
-#include <android/asset_manager.h>
-#include <android/asset_manager_jni.h>
-
 #include <cassert>
 #include <memory>
 #include <vector>
@@ -44,7 +41,6 @@ public:
     {
         mEngine = engine;
 
-        AAssetManager* assetManager = engine->app->activity->assetManager;
         off_t size;
 
         loadVKLibs();

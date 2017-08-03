@@ -28,8 +28,8 @@
 #include <streambuf>
 #include <istream>
 
+#include "Asset.h"
 #include "engine.h"
-
 #include "VKRenderer.h"
 
 #include <android/asset_manager.h>
@@ -168,6 +168,7 @@ void android_main(struct android_app* state) {
         engine.state = *(struct saved_state*)state->savedState;
     }
 
+    Asset::setAssetManager(engine.app->activity->assetManager);
     // loop waiting for stuff to do.
 
     while (1) {
