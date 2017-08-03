@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 #include <memory>
 #include <vector>
 #include "Logging.h"
@@ -98,7 +99,19 @@ public:
             "VK_LAYER_LUNARG_swapchain",
             "VK_LAYER_GOOGLE_unique_objects"
 #else
-            "VK_LAYER_LUNARG_standard_validation"
+            "VK_LAYER_LUNARG_core_validation",
+            "VK_LAYER_LUNARG_parameter_validation",
+            "VK_LAYER_LUNARG_standard_validation",
+            // "VK_LAYER_LUNARG_api_dump",
+            "VK_LAYER_LUNARG_monitor",
+            "VK_LAYER_LUNARG_object_tracker",
+            "VK_LAYER_LUNARG_screenshot",           
+            "VK_LAYER_GOOGLE_threading",
+            "VK_LAYER_GOOGLE_unique_objects",
+            // "VK_LAYER_LUNARG_vktrace",
+            // "VK_LAYER_RENDERDOC_Capture",
+            // "VK_LAYER_NV_optimus",
+            // "VK_LAYER_NV_nsight",
 #endif
         };
 
@@ -178,10 +191,30 @@ public:
         result = vkEnumerateDeviceExtensionProperties(mPhysicalDevice, nullptr, &count, deviceExtensions.data());
         assert(result == VK_SUCCESS);
 
+        static const char *blackList = 
+            "VK_KHR_bind_memory2"
+            "VK_KHR_image_format_list"
+            "VK_KHR_maintenance2"
+            "VK_KHR_relaxed_block_layout"
+            "VK_KHR_sampler_ycbcr_conversion"
+            "VK_KHX_external_memory"
+            "VK_KHX_external_memory_win32"
+            "VK_KHX_external_semaphore"
+            "VK_KHX_external_semaphore_win32"
+            "VK_KHX_external_fence"
+            "VK_KHX_external_fence_win32"
+            "VK_KHX_win32_keyed_mutex"
+            "VK_KHX_subgroup"
+            "VK_NV_sample_locations"
+            ;
+
         std::vector<const char*> deviceExtNames;
-        for (auto& dextension : deviceExtensions)
+        for (auto &dextension : deviceExtensions)
         {
-            deviceExtNames.push_back(dextension.extensionName);
+            if (!std::strstr(blackList, dextension.extensionName))
+            {
+                deviceExtNames.push_back(dextension.extensionName);
+            }
         }
 
         std::vector<const char*> deviceLayerNames;
@@ -198,7 +231,7 @@ public:
         result = vkCreateAndroidSurfaceKHR(mInstance, &createInfo, nullptr, &mSurface);
         assert(result == VK_SUCCESS);
 #else
-        VkWin32SurfaceCreateInfoKHR createInfo;
+        VkWin32SurfaceCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
         createInfo.hwnd = glfwGetWin32Window(reinterpret_cast<GLFWwindow*>(platform));
         createInfo.hinstance = GetModuleHandle(nullptr);
@@ -305,7 +338,7 @@ public:
         swapchainCreateInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
         swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
         swapchainCreateInfo.clipped = VK_FALSE;
-        swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+        swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 
         result = vkCreateSwapchainKHR(mDevice, &swapchainCreateInfo,
             nullptr, &mSwapchain);
@@ -317,7 +350,7 @@ public:
 
         // create render pass
         {
-            VkAttachmentDescription attachmentDescriptions;
+            VkAttachmentDescription attachmentDescriptions{};
             attachmentDescriptions.format = DisplayFormat;
             attachmentDescriptions.samples = VK_SAMPLE_COUNT_1_BIT;
             attachmentDescriptions.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -327,7 +360,7 @@ public:
             attachmentDescriptions.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             attachmentDescriptions.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-            VkAttachmentReference colorReference;
+            VkAttachmentReference colorReference{};
             colorReference.attachment = 0;
             colorReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
@@ -362,7 +395,7 @@ public:
 
             std::array<VkAttachmentDescription, 2> attachments = { attachmentDescriptions, depthAttachment };
 
-            VkRenderPassCreateInfo renderPassCreateInfo;
+            VkRenderPassCreateInfo renderPassCreateInfo{};
             renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
             renderPassCreateInfo.pNext = nullptr;
             renderPassCreateInfo.attachmentCount = static_cast<uint32_t>(attachments.size());

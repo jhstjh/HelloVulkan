@@ -7,6 +7,11 @@
 
 static AAssetManager* gAssetManager = nullptr;
 
+void Asset::setAssetManager(void* assetManager)
+{
+    gAssetManager = reinterpret_cast<AAssetManager*>(assetManager);
+}
+
 struct Asset::Impl
 {
     Impl(std::string filename, uint32_t /*openMode*/)
@@ -48,6 +53,11 @@ struct Asset::Impl
 
 #include <cstdio>
 #include <direct.h>
+
+void Asset::setAssetManager(void* /*assetManager*/)
+{
+
+}
 
 struct Asset::Impl
 {
@@ -94,11 +104,6 @@ struct Asset::Impl
 
 
 #endif
-
-void Asset::setAssetManager(void* /*assetManager*/)
-{
-    
-}
 
 Asset::Asset(std::string filename, uint32_t openMode)
 {

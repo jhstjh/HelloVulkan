@@ -115,7 +115,7 @@ Model::Model(std::string name, float offsetZ)
         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerInfo.anisotropyEnable = VK_TRUE;
-        samplerInfo.maxAnisotropy = 16;
+        samplerInfo.maxAnisotropy = 1.f;
         samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
         samplerInfo.unnormalizedCoordinates = VK_FALSE;
         samplerInfo.compareEnable = VK_FALSE;
@@ -429,12 +429,6 @@ Model::Model(std::string name, float offsetZ)
         auto result = vkCreatePipelineLayout(VKRenderer::getInstance().getDevice(), &pipelineLayoutCreateInfo, nullptr, &mPLayout);
         assert(result == VK_SUCCESS);
 
-        VkPipelineDynamicStateCreateInfo dynamicStateInfo;
-        dynamicStateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dynamicStateInfo.pNext = nullptr;
-        dynamicStateInfo.dynamicStateCount = 0;
-        dynamicStateInfo.pDynamicStates = nullptr;
-
         Asset vs("shader.vert.spv", 0);
         auto size = vs.getLength();
         std::vector<uint8_t> vsData(size);
@@ -503,7 +497,7 @@ Model::Model(std::string name, float offsetZ)
         scissor.offset.x = 0;
         scissor.offset.y = 0;
 
-        VkPipelineViewportStateCreateInfo viewportInfo;
+        VkPipelineViewportStateCreateInfo viewportInfo{};
         viewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
         viewportInfo.pNext = nullptr;
         viewportInfo.viewportCount = 1;
@@ -512,7 +506,7 @@ Model::Model(std::string name, float offsetZ)
         viewportInfo.pScissors = &scissor;
 
         VkSampleMask sampleMask = ~0u;
-        VkPipelineMultisampleStateCreateInfo multisampleInfo;
+        VkPipelineMultisampleStateCreateInfo multisampleInfo{};
         multisampleInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multisampleInfo.pNext = nullptr;
         multisampleInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
@@ -522,12 +516,12 @@ Model::Model(std::string name, float offsetZ)
         multisampleInfo.alphaToCoverageEnable = VK_FALSE;
         multisampleInfo.alphaToOneEnable = VK_FALSE;
 
-        VkPipelineColorBlendAttachmentState attachmentStates;
+        VkPipelineColorBlendAttachmentState attachmentStates{};
         attachmentStates.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
             VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         attachmentStates.blendEnable = VK_FALSE;
 
-        VkPipelineColorBlendStateCreateInfo colorBlendInfo;
+        VkPipelineColorBlendStateCreateInfo colorBlendInfo{};
         colorBlendInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBlendInfo.pNext = nullptr;
         colorBlendInfo.logicOpEnable = VK_FALSE;
@@ -535,7 +529,7 @@ Model::Model(std::string name, float offsetZ)
         colorBlendInfo.attachmentCount = 1;
         colorBlendInfo.pAttachments = &attachmentStates;
 
-        VkPipelineRasterizationStateCreateInfo rasterInfo;
+        VkPipelineRasterizationStateCreateInfo rasterInfo{};
         rasterInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterInfo.pNext = nullptr;
         rasterInfo.depthClampEnable = VK_FALSE;
@@ -546,7 +540,7 @@ Model::Model(std::string name, float offsetZ)
         rasterInfo.depthBiasEnable = VK_FALSE;
         rasterInfo.lineWidth = 1;
 
-        VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo;
+        VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo{};
         inputAssemblyInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         inputAssemblyInfo.pNext = nullptr;
         inputAssemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -555,7 +549,7 @@ Model::Model(std::string name, float offsetZ)
         auto bindingDescription = Vertex::getBindingDescription();
         auto attributeDescriptions = Vertex::getAttributeDescriptions();
 
-        VkPipelineVertexInputStateCreateInfo vertexInputInfo;
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.pNext = nullptr;
         vertexInputInfo.vertexBindingDescriptionCount = 1;
@@ -563,7 +557,7 @@ Model::Model(std::string name, float offsetZ)
         vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
         vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
-        VkPipelineCacheCreateInfo pipelineCacheInfo;
+        VkPipelineCacheCreateInfo pipelineCacheInfo{};
         pipelineCacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
         pipelineCacheInfo.pNext = nullptr;
         pipelineCacheInfo.initialDataSize = 0;
@@ -599,7 +593,7 @@ Model::Model(std::string name, float offsetZ)
         pipelineCreateInfo.pMultisampleState = &multisampleInfo;
         pipelineCreateInfo.pDepthStencilState = &depthStencil;
         pipelineCreateInfo.pColorBlendState = &colorBlendInfo;
-        pipelineCreateInfo.pDynamicState = &dynamicStateInfo;
+        pipelineCreateInfo.pDynamicState = nullptr;
         pipelineCreateInfo.layout = mPLayout;
         pipelineCreateInfo.renderPass = VKRenderer::getInstance().getRenderPass();
         pipelineCreateInfo.subpass = 0;
@@ -682,12 +676,6 @@ Model::Model(std::string name, float offsetZ)
 
         auto result = vkCreatePipelineLayout(VKRenderer::getInstance().getDevice(), &pipelineLayoutCreateInfo, nullptr, &mShadowPLayout);
         assert(result == VK_SUCCESS);
-
-        VkPipelineDynamicStateCreateInfo dynamicStateInfo{};
-        dynamicStateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dynamicStateInfo.pNext = nullptr;
-        dynamicStateInfo.dynamicStateCount = 0;
-        dynamicStateInfo.pDynamicStates = nullptr;
 
         Asset vs("shader.vert.spv", 0);
         auto size = vs.getLength();
@@ -819,7 +807,7 @@ Model::Model(std::string name, float offsetZ)
         pipelineCreateInfo.pMultisampleState = &multisampleInfo;
         pipelineCreateInfo.pDepthStencilState = &depthStencil;
         pipelineCreateInfo.pColorBlendState = nullptr;
-        pipelineCreateInfo.pDynamicState = &dynamicStateInfo;
+        pipelineCreateInfo.pDynamicState = nullptr;
         pipelineCreateInfo.layout = mShadowPLayout;
         pipelineCreateInfo.renderPass = VKRenderer::getInstance().getShadowMap()->getRenderPass();
         pipelineCreateInfo.subpass = 0;

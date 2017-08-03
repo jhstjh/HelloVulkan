@@ -136,7 +136,7 @@ endif()
 if(HV_WINDOWS)
 	link_directories(
 		"${CMAKE_CURRENT_SOURCE_DIR}/lib/windows/"
-		$ENV{VULKAN_SDK}/Bin)
+		$ENV{VULKAN_SDK}/Lib)
 endif()
 
 #--------------------------------------------------
@@ -193,11 +193,7 @@ add_custom_command(TARGET HelloVulkan
 	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/assets
     COMMAND cmd /c ${CMAKE_CURRENT_SOURCE_DIR}/assets/compileShaders.cmd)
 	
-if(HV_WINDOWS)
-	link_directories(
-		"${CMAKE_CURRENT_SOURCE_DIR}/lib/windows/"
-		$ENV{VULKAN_SDK}/Bin)
-		
+if(HV_WINDOWS)	
 	target_link_libraries(HelloVulkan vulkan-1.lib glfw3d.lib)	
 	set_target_properties(HelloVulkan PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()	
