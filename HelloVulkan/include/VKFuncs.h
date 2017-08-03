@@ -4,7 +4,7 @@
 
 #ifdef _ANDROID
 #define VK_NO_PROTOTYPES
-#include "nosdk/vulkan/vulkan.h"
+#include <vulkan/vulkan.h>
 #undef VK_NO_PROTOTYPES
 
 #define VK_IMPORT(name) extern PFN_##name name;
