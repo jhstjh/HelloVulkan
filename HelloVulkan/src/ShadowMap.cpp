@@ -105,77 +105,15 @@ ShadowMap::ShadowMap()
         auto result = vkCreateFramebuffer(VKRenderer::getInstance().getDevice(), &createInfo, nullptr, &mShadowDepthFramebuffer);
         assert(result == VK_SUCCESS);
     }
+}
 
-    // create uniform buffer
-    {
-        VKRenderer::getInstance().createBuffer(sizeof(UboShadow), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, mUniformBuffer, mUniformBufferMemory);
-    }
-
-#if 0 // why do I need a full screen quad???
-    // create full screen quad mesh
-    {
-        struct Vertex {
-            float pos[3];
-            float uv[2];
-            float col[3];
-            float normal[3];
-
-            static VkVertexInputBindingDescription getBindingDescription() {
-                VkVertexInputBindingDescription bindingDescription = {};
-                bindingDescription.binding = 0;
-                bindingDescription.stride = sizeof(Vertex);
-                bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-                return bindingDescription;
-            }
-
-            static std::array<VkVertexInputAttributeDescription, 4> getAttributeDescriptions() {
-                std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions = {};
-                attributeDescriptions[0].binding = 0;
-                attributeDescriptions[0].location = 0;
-                attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-                attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-                attributeDescriptions[1].binding = 0;
-                attributeDescriptions[1].location = 1;
-                attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-                attributeDescriptions[1].offset = offsetof(Vertex, uv);
-
-                attributeDescriptions[2].binding = 0;
-                attributeDescriptions[2].location = 2;
-                attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
-                attributeDescriptions[2].offset = offsetof(Vertex, col);
-
-                attributeDescriptions[3].binding = 0;
-                attributeDescriptions[3].location = 3;
-                attributeDescriptions[3].format = VK_FORMAT_R32G32B32_SFLOAT;
-                attributeDescriptions[3].offset = offsetof(Vertex, normal);
-
-                return attributeDescriptions;
-            }
-        };
-
-        std::vector<Vertex> vertexBuffer =
-        {
-            { { 1.0f, 1.0f, 0.0f },{ 1.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 1.0f } },
-            { { 0.0f, 1.0f, 0.0f },{ 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 1.0f } },
-            { { 0.0f, 0.0f, 0.0f },{ 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 1.0f } },
-            { { 1.0f, 0.0f, 0.0f },{ 1.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 1.0f } }
-        };
-
-        VKRenderer::getInstance().createBuffer(vertexBuffer.size() * sizeof(Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, mScreenQuadVertexBuffer, mScreenQuadVertexBufferMemory);
-
-        std::vector<uint32_t> indexBuffer = { 0, 1, 2, 2, 3, 0 };
-
-        VKRenderer::getInstance().createBuffer(indexBuffer.size() * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, mScreenQuadIndexBuffer, mScreenQuadIndexBufferMemory);
-    
-    
-        // todo
-    }
-#endif
-
-    
+ShadowMap::~ShadowMap()
+{
+    vkDestroyRenderPass(VKRenderer::getInstance().getDevice(), mShadowRenderPass, nullptr);
+    vkDestroyRenderPass(VKRenderer::getInstance().getDevice(), mShadowRenderPassClear, nullptr);
+    vkDestroyImageView(VKRenderer::getInstance().getDevice(), mShadowDepthImageView, nullptr);
+    vkDestroyImage(VKRenderer::getInstance().getDevice(), mShadowDepthImage, nullptr);
+    vkFreeMemory(VKRenderer::getInstance().getDevice(), mShadowDepthImageMemory, nullptr);
+    vkDestroySampler(VKRenderer::getInstance().getDevice(), mShadowDepthImageSampler, nullptr);
+    vkDestroyFramebuffer(VKRenderer::getInstance().getDevice(), mShadowDepthFramebuffer, nullptr);
 }

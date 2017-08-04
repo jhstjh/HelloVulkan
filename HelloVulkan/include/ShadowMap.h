@@ -6,6 +6,7 @@ class ShadowMap
 {
 public:
     ShadowMap();
+    ~ShadowMap();
 
     VkImageView getShadowMapView()
     {
@@ -33,11 +34,6 @@ public:
     }
 
 private:
-    struct
-    {
-        mathfu::mat4 depthMVP;
-    } UboShadow;
-
     VkRenderPass    mShadowRenderPass;
     VkRenderPass    mShadowRenderPassClear;
     VkImage         mShadowDepthImage;
@@ -45,10 +41,4 @@ private:
     VkDeviceMemory  mShadowDepthImageMemory;
     VkSampler       mShadowDepthImageSampler;
     VkFramebuffer   mShadowDepthFramebuffer;
-    VkBuffer        mScreenQuadVertexBuffer;
-    VkDeviceMemory  mScreenQuadVertexBufferMemory;
-    VkBuffer        mScreenQuadIndexBuffer;
-    VkDeviceMemory  mScreenQuadIndexBufferMemory;
-    VkBuffer        mUniformBuffer;
-    VkDeviceMemory  mUniformBufferMemory;
 };

@@ -204,6 +204,9 @@ Model::Model(std::string name, float offsetZ)
 
         // copy vertex buffer from host visible to device local
         VKRenderer::getInstance().copyBuffer(stagingBuffer, mVertexBuffer, bufferSize);
+
+        vkDestroyBuffer(VKRenderer::getInstance().getDevice(), stagingBuffer, nullptr);
+        vkFreeMemory(VKRenderer::getInstance().getDevice(), stagingBufferMemory, nullptr);
     }
 
     {
@@ -227,6 +230,9 @@ Model::Model(std::string name, float offsetZ)
 
         // copy index buffer from host visible to device local
         VKRenderer::getInstance().copyBuffer(stagingBuffer, mIndexBuffer, bufferSize);
+
+        vkDestroyBuffer(VKRenderer::getInstance().getDevice(), stagingBuffer, nullptr);
+        vkFreeMemory(VKRenderer::getInstance().getDevice(), stagingBufferMemory, nullptr);
     }
 
     // create uniform buffer
@@ -294,6 +300,7 @@ Model::Model(std::string name, float offsetZ)
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
         poolInfo.maxSets = 1;
+        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 
         auto result = vkCreateDescriptorPool(VKRenderer::getInstance().getDevice(), &poolInfo, nullptr, &mDescriptorPool);
         assert(result == VK_SUCCESS);
@@ -383,6 +390,7 @@ Model::Model(std::string name, float offsetZ)
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
         poolInfo.maxSets = 1;
+        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 
         auto result = vkCreateDescriptorPool(VKRenderer::getInstance().getDevice(), &poolInfo, nullptr, &mShadowDescriptorPool);
         assert(result == VK_SUCCESS);
@@ -603,6 +611,9 @@ Model::Model(std::string name, float offsetZ)
         result = vkCreateGraphicsPipelines(VKRenderer::getInstance().getDevice(), mPCache, 1, &pipelineCreateInfo, nullptr, &mPipeline);
         assert(result == VK_SUCCESS);
 
+        vkDestroyShaderModule(VKRenderer::getInstance().getDevice(), vertexShader, nullptr);
+        vkDestroyShaderModule(VKRenderer::getInstance().getDevice(), fragmentShader, nullptr);
+
         // create command buffer
         mCmdBufferLen = VKRenderer::getInstance().getSwapChainLength();
         mCmdBuffer.resize(mCmdBufferLen);
@@ -817,6 +828,8 @@ Model::Model(std::string name, float offsetZ)
         result = vkCreateGraphicsPipelines(VKRenderer::getInstance().getDevice(), mShadowPCache, 1, &pipelineCreateInfo, nullptr, &mShadowPipeline);
         assert(result == VK_SUCCESS);
 
+        vkDestroyShaderModule(VKRenderer::getInstance().getDevice(), vertexShader, nullptr);
+
         // create command buffer
         mCmdBufferLen = VKRenderer::getInstance().getSwapChainLength();
         mShadowCmdBuffer.resize(mCmdBufferLen);
@@ -877,6 +890,46 @@ Model::Model(std::string name, float offsetZ)
             assert(result == VK_SUCCESS);
         }
     }
+}
+
+Model::~Model()
+{
+    vkFreeCommandBuffers(VKRenderer::getInstance().getDevice(), VKRenderer::getInstance().getCommandPool(), static_cast<uint32_t>(mCmdBuffer.size()), mCmdBuffer.data());
+    mCmdBuffer.clear();
+
+    vkFreeCommandBuffers(VKRenderer::getInstance().getDevice(), VKRenderer::getInstance().getCommandPool(), static_cast<uint32_t>(mShadowCmdBuffer.size()), mShadowCmdBuffer.data());
+    mShadowCmdBuffer.clear();
+
+    vkDestroyPipeline(VKRenderer::getInstance().getDevice(), mShadowPipeline, nullptr);
+    vkDestroyPipelineCache(VKRenderer::getInstance().getDevice(), mShadowPCache, nullptr);
+    vkDestroyPipelineLayout(VKRenderer::getInstance().getDevice(), mShadowPLayout, nullptr);
+    vkDestroyPipeline(VKRenderer::getInstance().getDevice(), mPipeline, nullptr);
+    vkDestroyPipelineCache(VKRenderer::getInstance().getDevice(), mPCache, nullptr);
+    vkDestroyPipelineLayout(VKRenderer::getInstance().getDevice(), mPLayout, nullptr);
+    vkDestroyDescriptorSetLayout(VKRenderer::getInstance().getDevice(), mShadowDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(VKRenderer::getInstance().getDevice(), mDescriptorSetLayout, nullptr);
+    vkDestroySampler(VKRenderer::getInstance().getDevice(), mTextureSampler, nullptr);
+    vkDestroyImageView(VKRenderer::getInstance().getDevice(), mTextureImageView, nullptr);
+    vkDestroyImage(VKRenderer::getInstance().getDevice(), mTextureImage, nullptr);
+    vkFreeMemory(VKRenderer::getInstance().getDevice(), mTextureImageMemory, nullptr);
+    vkDestroyImage(VKRenderer::getInstance().getDevice(), mStagingImage, nullptr);
+    vkFreeMemory(VKRenderer::getInstance().getDevice(), mStagingImageMemory, nullptr);
+    vkFreeDescriptorSets(VKRenderer::getInstance().getDevice(), mShadowDescriptorPool, 1, &mShadowDescriptorSet);
+    vkDestroyDescriptorPool(VKRenderer::getInstance().getDevice(), mShadowDescriptorPool, nullptr);
+    vkFreeDescriptorSets(VKRenderer::getInstance().getDevice(), mDescriptorPool, 1, &mDescriptorSet);
+    vkDestroyDescriptorPool(VKRenderer::getInstance().getDevice(), mDescriptorPool, nullptr);
+    vkDestroyBuffer(VKRenderer::getInstance().getDevice(), mShadowUniformBuffer, nullptr);
+    vkFreeMemory(VKRenderer::getInstance().getDevice(), mShadowUniformBufferMemory, nullptr);
+    vkDestroyBuffer(VKRenderer::getInstance().getDevice(), mUniformBuffer, nullptr);
+    vkFreeMemory(VKRenderer::getInstance().getDevice(), mUniformBufferMemory, nullptr);
+    vkDestroyBuffer(VKRenderer::getInstance().getDevice(), mShadowUniformStagingBuffer, nullptr);
+    vkFreeMemory(VKRenderer::getInstance().getDevice(), mShadowUniformStagingBufferMemory, nullptr);
+    vkDestroyBuffer(VKRenderer::getInstance().getDevice(), mUniformStagingBuffer, nullptr);
+    vkFreeMemory(VKRenderer::getInstance().getDevice(), mUniformStagingBufferMemory, nullptr);
+    vkDestroyBuffer(VKRenderer::getInstance().getDevice(), mIndexBuffer, nullptr);
+    vkFreeMemory(VKRenderer::getInstance().getDevice(), mIndexBufferMemory, nullptr);
+    vkDestroyBuffer(VKRenderer::getInstance().getDevice(), mVertexBuffer, nullptr);
+    vkFreeMemory(VKRenderer::getInstance().getDevice(), mVertexBufferMemory, nullptr);
 }
 
 VkCommandBuffer &Model::getCommandBuffer(uint32_t nextIndex)

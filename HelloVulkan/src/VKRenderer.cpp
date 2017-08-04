@@ -33,13 +33,50 @@ public:
 
     virtual ~VKRendererImpl()
     {
+        vkQueueWaitIdle(mQueue);
+
         for (auto &model : mModels)
         {
             delete model;
         }
         mModels.clear();
 
+        delete mShadowMap;
+
+        vkDestroySwapchainKHR(mDevice, mSwapchain, nullptr);
+        vkDestroySemaphore(mDevice, mImageAvailableSemaphore, nullptr);
+        vkDestroySemaphore(mDevice, mRenderFinishedSemaphore, nullptr);
+        vkDestroySemaphore(mDevice, mShadowMapAvailableSemaphore, nullptr);
+        vkDestroyImageView(mDevice, mDepthImageView, nullptr);
+        vkDestroyImage(mDevice, mDepthImage, nullptr);
+        vkFreeMemory(mDevice, mDepthImageMemory, nullptr);
+        vkDestroyRenderPass(mDevice, mRenderPass, nullptr);
+        vkDestroyRenderPass(mDevice, mRenderPassClear, nullptr);
+
+        for (auto &framebuffer : mFramebuffers)
+        {
+            vkDestroyFramebuffer(mDevice, framebuffer, nullptr);
+        }
+
+        for (auto &displayView : mDisplayViews)
+        {
+            vkDestroyImageView(mDevice, displayView, nullptr);
+        }
+
+        vkDestroyCommandPool(mDevice, mCmdPool, nullptr);
         vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
+        
+#ifdef _ANDROID
+        PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT =
+            reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>(
+                loadFuncFromValidationLib("vkDestroyDebugReportCallbackEXT"));
+#else
+        PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT = (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr(mInstance, "vkDestroyDebugReportCallbackEXT");
+        assert(vkDestroyDebugReportCallbackEXT);
+#endif
+
+        vkDestroyDebugReportCallbackEXT(mInstance, mDebugReportCallback, nullptr);
+        
         vkDestroyDevice(mDevice, nullptr);
         vkDestroyInstance(mInstance, nullptr);
 
@@ -170,8 +207,7 @@ public:
         assert(vkCreateDebugReportCallbackEXT);
 #endif
 
-        VkDebugReportCallbackEXT debugReportCallback;
-        result = vkCreateDebugReportCallbackEXT(mInstance, &debugReportCallbackCreateInfo, nullptr, &debugReportCallback);
+        result = vkCreateDebugReportCallbackEXT(mInstance, &debugReportCallbackCreateInfo, nullptr, &mDebugReportCallback);
         assert(result == VK_SUCCESS);
 
         // physical device layers and extensions
@@ -509,7 +545,7 @@ public:
             assert(result == VK_SUCCESS);
         }
 
-        mShadowMap = std::make_unique<ShadowMap>();
+        mShadowMap = new ShadowMap();
 
         mModels.push_back(new Model("chalet", 0.f));
         mModels.push_back(new Model("cube", 2.f));
@@ -939,7 +975,7 @@ public:
 
     ShadowMap* getShadowMap() final
     {
-        return mShadowMap.get();
+        return mShadowMap;
     }
 
     VkDevice &getDevice() final
@@ -980,8 +1016,8 @@ public:
 
     void release() final
     {
-        _instance = nullptr;
         delete this;
+        _instance = nullptr;
     }
 
 public:
@@ -1014,8 +1050,10 @@ public:
     VkSemaphore         mShadowMapAvailableSemaphore;
     VkSemaphore         mRenderFinishedSemaphore;
 
-    std::vector<Model*>            mModels;
-    std::unique_ptr<ShadowMap>     mShadowMap;
+    VkDebugReportCallbackEXT mDebugReportCallback;
+
+    std::vector<Model*> mModels;
+    ShadowMap*          mShadowMap{ nullptr };
 };
 
 }
