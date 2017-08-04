@@ -52,8 +52,8 @@ class Model
 public:
     Model(std::string name, float offsetZ);
     ~Model();
-    VkCommandBuffer &getCommandBuffer(uint32_t nextIndex);
-    VkCommandBuffer &getShadowCommandBuffer(uint32_t nextIndex);
+    void executeCommandBuffer(VkCommandBuffer primaryCmdBuffer, uint32_t nextIndex);
+    void executeShadowCommandBuffer(VkCommandBuffer primaryCmdBuffer, uint32_t nextIndex);
     void update();
 
 private:

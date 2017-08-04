@@ -624,38 +624,26 @@ Model::Model(std::string name, float offsetZ)
             cmdBufferAllocationInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
             cmdBufferAllocationInfo.pNext = nullptr;
             cmdBufferAllocationInfo.commandPool = VKRenderer::getInstance().getCommandPool();
-            cmdBufferAllocationInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            cmdBufferAllocationInfo.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
             cmdBufferAllocationInfo.commandBufferCount = 1;
 
             result = vkAllocateCommandBuffers(VKRenderer::getInstance().getDevice(), &cmdBufferAllocationInfo, &mCmdBuffer[bufferIndex]);
             assert(result == VK_SUCCESS);
 
+            VkCommandBufferInheritanceInfo cmdBufferInheritanceInfo = {};
+            cmdBufferInheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+            cmdBufferInheritanceInfo.renderPass = VKRenderer::getInstance().getRenderPass();
+            cmdBufferInheritanceInfo.subpass = 0;
+            cmdBufferInheritanceInfo.framebuffer = VKRenderer::getInstance().getFramebuffer(bufferIndex);
 
             VkCommandBufferBeginInfo cmdBufferBeginInfo{};
             cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
             cmdBufferBeginInfo.pNext = nullptr;
-            cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-            cmdBufferBeginInfo.pInheritanceInfo = nullptr;
+            cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+            cmdBufferBeginInfo.pInheritanceInfo = &cmdBufferInheritanceInfo;
 
             result = vkBeginCommandBuffer(mCmdBuffer[bufferIndex], &cmdBufferBeginInfo);
             assert(result == VK_SUCCESS);
-
-            std::array<VkClearValue, 2> clearValues = {};
-            clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
-            clearValues[1].depthStencil = { 1.0f, 0 };
-
-            VkRenderPassBeginInfo renderPassBeginInfo{};
-            renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            renderPassBeginInfo.pNext = nullptr;
-            renderPassBeginInfo.renderPass = VKRenderer::getInstance().getRenderPass();
-            renderPassBeginInfo.framebuffer = VKRenderer::getInstance().getFramebuffer(bufferIndex);
-            renderPassBeginInfo.renderArea.offset.x = 0;
-            renderPassBeginInfo.renderArea.offset.y = 0;
-            renderPassBeginInfo.renderArea.extent = displaySize;
-            renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-            renderPassBeginInfo.pClearValues = clearValues.data();
-
-            vkCmdBeginRenderPass(mCmdBuffer[bufferIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
             vkCmdBindPipeline(mCmdBuffer[bufferIndex], VK_PIPELINE_BIND_POINT_GRAPHICS,
                 mPipeline);
@@ -668,7 +656,6 @@ Model::Model(std::string name, float offsetZ)
 
             vkCmdDrawIndexed(mCmdBuffer[bufferIndex], static_cast<uint32_t>(mIndices.size()), 1, 0, 0, 0);
 
-            vkCmdEndRenderPass(mCmdBuffer[bufferIndex]);
             result = vkEndCommandBuffer(mCmdBuffer[bufferIndex]);
             assert(result == VK_SUCCESS);
         }
@@ -725,13 +712,13 @@ Model::Model(std::string name, float offsetZ)
         viewports.maxDepth = 1.0f;
         viewports.x = 0;
         viewports.y = 0;
-        viewports.width = 2048; // TODO
-        viewports.height = 2048;
+        viewports.width = static_cast<float>(ShadowMap::SHADOWMAP_DIM);
+        viewports.height = static_cast<float>(ShadowMap::SHADOWMAP_DIM);
 
         VkRect2D scissor;
         scissor.extent = displaySize;
-        scissor.extent.width = 2048;
-        scissor.extent.height = 2048;
+        scissor.extent.width = ShadowMap::SHADOWMAP_DIM;
+        scissor.extent.height = ShadowMap::SHADOWMAP_DIM;
         scissor.offset.x = 0;
         scissor.offset.y = 0;
 
@@ -840,39 +827,26 @@ Model::Model(std::string name, float offsetZ)
             cmdBufferAllocationInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
             cmdBufferAllocationInfo.pNext = nullptr;
             cmdBufferAllocationInfo.commandPool = VKRenderer::getInstance().getCommandPool();
-            cmdBufferAllocationInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            cmdBufferAllocationInfo.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
             cmdBufferAllocationInfo.commandBufferCount = 1;
 
             result = vkAllocateCommandBuffers(VKRenderer::getInstance().getDevice(), &cmdBufferAllocationInfo, &mShadowCmdBuffer[bufferIndex]);
             assert(result == VK_SUCCESS);
 
+            VkCommandBufferInheritanceInfo cmdBufferInheritanceInfo = {};
+            cmdBufferInheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+            cmdBufferInheritanceInfo.renderPass = VKRenderer::getInstance().getShadowMap()->getRenderPass();
+            cmdBufferInheritanceInfo.subpass = 0;
+            cmdBufferInheritanceInfo.framebuffer = VKRenderer::getInstance().getShadowMap()->getFramebuffer();
 
             VkCommandBufferBeginInfo cmdBufferBeginInfo{};
             cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
             cmdBufferBeginInfo.pNext = nullptr;
-            cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-            cmdBufferBeginInfo.pInheritanceInfo = nullptr;
+            cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+            cmdBufferBeginInfo.pInheritanceInfo = &cmdBufferInheritanceInfo;
 
             result = vkBeginCommandBuffer(mShadowCmdBuffer[bufferIndex], &cmdBufferBeginInfo);
             assert(result == VK_SUCCESS);
-
-            std::array<VkClearValue, 2> clearValues = {};
-            clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
-            clearValues[1].depthStencil = { 1.0f, 0 };
-
-            VkRenderPassBeginInfo renderPassBeginInfo{};
-            renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            renderPassBeginInfo.pNext = nullptr;
-            renderPassBeginInfo.renderPass = VKRenderer::getInstance().getShadowMap()->getRenderPass();
-            renderPassBeginInfo.framebuffer = VKRenderer::getInstance().getShadowMap()->getFramebuffer();
-            renderPassBeginInfo.renderArea.offset.x = 0;
-            renderPassBeginInfo.renderArea.offset.y = 0;
-            renderPassBeginInfo.renderArea.extent.width = 2048;
-            renderPassBeginInfo.renderArea.extent.height = 2048;
-            renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-            renderPassBeginInfo.pClearValues = clearValues.data();
-
-            vkCmdBeginRenderPass(mShadowCmdBuffer[bufferIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
             vkCmdBindPipeline(mShadowCmdBuffer[bufferIndex], VK_PIPELINE_BIND_POINT_GRAPHICS,
                 mShadowPipeline);
@@ -885,7 +859,6 @@ Model::Model(std::string name, float offsetZ)
 
             vkCmdDrawIndexed(mShadowCmdBuffer[bufferIndex], static_cast<uint32_t>(mIndices.size()), 1, 0, 0, 0);
 
-            vkCmdEndRenderPass(mShadowCmdBuffer[bufferIndex]);
             result = vkEndCommandBuffer(mShadowCmdBuffer[bufferIndex]);
             assert(result == VK_SUCCESS);
         }
@@ -932,14 +905,14 @@ Model::~Model()
     vkFreeMemory(VKRenderer::getInstance().getDevice(), mVertexBufferMemory, nullptr);
 }
 
-VkCommandBuffer &Model::getCommandBuffer(uint32_t nextIndex)
+void Model::executeCommandBuffer(VkCommandBuffer primaryCmdBuffer, uint32_t nextIndex)
 {
-    return mCmdBuffer[nextIndex];
+    vkCmdExecuteCommands(primaryCmdBuffer, 1, &mCmdBuffer[nextIndex]);
 }
 
-VkCommandBuffer &Model::getShadowCommandBuffer(uint32_t nextIndex)
+void Model::executeShadowCommandBuffer(VkCommandBuffer primaryCmdBuffer, uint32_t nextIndex)
 {
-    return mShadowCmdBuffer[nextIndex];
+    vkCmdExecuteCommands(primaryCmdBuffer, 1, &mShadowCmdBuffer[nextIndex]);
 }
 
 void Model::update()

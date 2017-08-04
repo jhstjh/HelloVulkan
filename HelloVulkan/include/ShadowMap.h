@@ -23,19 +23,15 @@ public:
         return mShadowRenderPass;
     }
 
-    VkRenderPass getRenderPassClear()
-    {
-        return mShadowRenderPassClear;
-    }
-
     VkFramebuffer getFramebuffer()
     {
         return mShadowDepthFramebuffer;
     }
 
+    static const uint32_t SHADOWMAP_DIM;
+
 private:
     VkRenderPass    mShadowRenderPass;
-    VkRenderPass    mShadowRenderPassClear;
     VkImage         mShadowDepthImage;
     VkImageView     mShadowDepthImageView;
     VkDeviceMemory  mShadowDepthImageMemory;

@@ -51,7 +51,6 @@ public:
         vkDestroyImage(mDevice, mDepthImage, nullptr);
         vkFreeMemory(mDevice, mDepthImageMemory, nullptr);
         vkDestroyRenderPass(mDevice, mRenderPass, nullptr);
-        vkDestroyRenderPass(mDevice, mRenderPassClear, nullptr);
 
         for (auto &framebuffer : mFramebuffers)
         {
@@ -389,7 +388,7 @@ public:
             VkAttachmentDescription attachmentDescriptions{};
             attachmentDescriptions.format = DisplayFormat;
             attachmentDescriptions.samples = VK_SAMPLE_COUNT_1_BIT;
-            attachmentDescriptions.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            attachmentDescriptions.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             attachmentDescriptions.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             attachmentDescriptions.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             attachmentDescriptions.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -403,7 +402,7 @@ public:
             VkAttachmentDescription depthAttachment = {};
             depthAttachment.format = findDepthFormat();
             depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-            depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -428,7 +427,6 @@ public:
             dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
             dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-
             std::array<VkAttachmentDescription, 2> attachments = { attachmentDescriptions, depthAttachment };
 
             VkRenderPassCreateInfo renderPassCreateInfo{};
@@ -443,13 +441,6 @@ public:
 
             result = vkCreateRenderPass(mDevice, &renderPassCreateInfo,
                 nullptr, &mRenderPass);
-            assert(result == VK_SUCCESS);
-
-            attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-            attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-
-            result = vkCreateRenderPass(mDevice, &renderPassCreateInfo,
-                nullptr, &mRenderPassClear);
             assert(result == VK_SUCCESS);
         }
 
@@ -820,50 +811,6 @@ public:
         vkBindBufferMemory(mDevice, buffer, bufferMemory, 0);
     };
 
-    void clearShadowMap(uint32_t nextIndex)
-    {
-        std::array<VkClearValue, 1> clearValues = {};
-        clearValues[0].depthStencil = { 1.0f, 0 };
-
-        // Clear color and depth
-        VkRenderPassBeginInfo renderPassBeginInfo{};
-        renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassBeginInfo.pNext = nullptr;
-        renderPassBeginInfo.renderPass = mShadowMap->getRenderPassClear();
-        renderPassBeginInfo.framebuffer = mShadowMap->getFramebuffer();
-        renderPassBeginInfo.renderArea.offset.x = 0;
-        renderPassBeginInfo.renderArea.offset.y = 0;
-        renderPassBeginInfo.renderArea.extent.width = 2048;
-        renderPassBeginInfo.renderArea.extent.height = 2048;
-        renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-        renderPassBeginInfo.pClearValues = clearValues.data();
-
-        vkCmdBeginRenderPass(mPrimaryShadowCmdBuffer[nextIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdEndRenderPass(mPrimaryShadowCmdBuffer[nextIndex]);
-    }
-
-    void clearFrame(uint32_t nextIndex)
-    {
-        std::array<VkClearValue, 2> clearValues = {};
-        clearValues[0].color = { 0.3f, 0.3f, 0.3f, 1.0f };
-        clearValues[1].depthStencil = { 1.0f, 0 };
-
-        // Clear color and depth
-        VkRenderPassBeginInfo renderPassBeginInfo{};
-        renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassBeginInfo.pNext = nullptr;
-        renderPassBeginInfo.renderPass = mRenderPassClear;
-        renderPassBeginInfo.framebuffer = mFramebuffers[nextIndex];
-        renderPassBeginInfo.renderArea.offset.x = 0;
-        renderPassBeginInfo.renderArea.offset.y = 0;
-        renderPassBeginInfo.renderArea.extent = mDisplaySize;
-        renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-        renderPassBeginInfo.pClearValues = clearValues.data();
-
-        vkCmdBeginRenderPass(mPrimaryCmdBuffer[nextIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdEndRenderPass(mPrimaryCmdBuffer[nextIndex]);
-    }
-
     void draw() final
     {
         vkQueueWaitIdle(mQueue);
@@ -881,18 +828,35 @@ public:
 
             result = vkBeginCommandBuffer(mPrimaryShadowCmdBuffer[nextIndex], &cmdBufferBeginInfo);
             assert(result == VK_SUCCESS);
+            {
+                std::array<VkClearValue, 1> clearValues = {};
+                clearValues[0].depthStencil = { 1.0f, 0 };
 
-            clearShadowMap(nextIndex);
+                // Clear color and depth
+                VkRenderPassBeginInfo renderPassBeginInfo{};
+                renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                renderPassBeginInfo.pNext = nullptr;
+                renderPassBeginInfo.renderPass = mShadowMap->getRenderPass();
+                renderPassBeginInfo.framebuffer = mShadowMap->getFramebuffer();
+                renderPassBeginInfo.renderArea.offset.x = 0;
+                renderPassBeginInfo.renderArea.offset.y = 0;
+                renderPassBeginInfo.renderArea.extent.width = ShadowMap::SHADOWMAP_DIM;
+                renderPassBeginInfo.renderArea.extent.height = ShadowMap::SHADOWMAP_DIM;
+                renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+                renderPassBeginInfo.pClearValues = clearValues.data();
 
+                vkCmdBeginRenderPass(mPrimaryShadowCmdBuffer[nextIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+                {
+                    for (auto &model : mModels)
+                    {
+                        model->executeShadowCommandBuffer(mPrimaryShadowCmdBuffer[nextIndex], nextIndex);
+                    }
+                }
+
+                vkCmdEndRenderPass(mPrimaryShadowCmdBuffer[nextIndex]);
+            }
             result = vkEndCommandBuffer(mPrimaryShadowCmdBuffer[nextIndex]);
             assert(result == VK_SUCCESS);
-
-            std::vector<VkCommandBuffer> commandbuffers;
-            commandbuffers.push_back(mPrimaryShadowCmdBuffer[nextIndex]);
-            for (auto &model : mModels)
-            {
-                commandbuffers.push_back(model->getShadowCommandBuffer(nextIndex));
-            }
 
             VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
@@ -902,8 +866,8 @@ public:
             submitInfo.waitSemaphoreCount = 1;
             submitInfo.pWaitSemaphores = &mImageAvailableSemaphore;
             submitInfo.pWaitDstStageMask = waitStages;
-            submitInfo.commandBufferCount = static_cast<uint32_t>(commandbuffers.size());
-            submitInfo.pCommandBuffers = commandbuffers.data();
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &mPrimaryShadowCmdBuffer[nextIndex];
             submitInfo.signalSemaphoreCount = 1;
             submitInfo.pSignalSemaphores = &mShadowMapAvailableSemaphore;
 
@@ -918,20 +882,36 @@ public:
             cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
             cmdBufferBeginInfo.pInheritanceInfo = nullptr;
 
+
             result = vkBeginCommandBuffer(mPrimaryCmdBuffer[nextIndex], &cmdBufferBeginInfo);
             assert(result == VK_SUCCESS);
+            {
+                std::array<VkClearValue, 2> clearValues = {};
+                clearValues[0].color = { 0.3f, 0.3f, 0.3f, 1.0f };
+                clearValues[1].depthStencil = { 1.0f, 0 };
 
-            clearFrame(nextIndex);
+                VkRenderPassBeginInfo renderPassBeginInfo{};
+                renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                renderPassBeginInfo.pNext = nullptr;
+                renderPassBeginInfo.renderPass = mRenderPass;
+                renderPassBeginInfo.framebuffer = mFramebuffers[nextIndex];
+                renderPassBeginInfo.renderArea.offset.x = 0;
+                renderPassBeginInfo.renderArea.offset.y = 0;
+                renderPassBeginInfo.renderArea.extent = mDisplaySize;
+                renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+                renderPassBeginInfo.pClearValues = clearValues.data();
 
+                vkCmdBeginRenderPass(mPrimaryCmdBuffer[nextIndex], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+                {
+                    for (auto &model : mModels)
+                    {
+                        model->executeCommandBuffer(mPrimaryCmdBuffer[nextIndex], nextIndex);
+                    }
+                }
+                vkCmdEndRenderPass(mPrimaryCmdBuffer[nextIndex]);
+            }
             result = vkEndCommandBuffer(mPrimaryCmdBuffer[nextIndex]);
             assert(result == VK_SUCCESS);
-
-            std::vector<VkCommandBuffer> commandbuffers;
-            commandbuffers.push_back(mPrimaryCmdBuffer[nextIndex]);
-            for (auto &model : mModels)
-            {
-                commandbuffers.push_back(model->getCommandBuffer(nextIndex));
-            }
 
             VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
@@ -941,8 +921,8 @@ public:
             submitInfo.waitSemaphoreCount = 1;
             submitInfo.pWaitSemaphores = &mShadowMapAvailableSemaphore;
             submitInfo.pWaitDstStageMask = waitStages;
-            submitInfo.commandBufferCount = static_cast<uint32_t>(commandbuffers.size());
-            submitInfo.pCommandBuffers = commandbuffers.data();
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &mPrimaryCmdBuffer[nextIndex];
             submitInfo.signalSemaphoreCount = 1;
             submitInfo.pSignalSemaphores = &mRenderFinishedSemaphore;
 
@@ -1038,7 +1018,6 @@ public:
     std::vector<VkImageView>        mDisplayViews;
 
     VkRenderPass        mRenderPass;
-    VkRenderPass        mRenderPassClear;
     VkCommandPool       mCmdPool;
     std::vector<VkCommandBuffer>    mPrimaryCmdBuffer;
     std::vector<VkCommandBuffer>    mPrimaryShadowCmdBuffer;

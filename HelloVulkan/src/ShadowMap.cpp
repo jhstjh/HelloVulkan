@@ -4,7 +4,7 @@
 #include "ShadowMap.h"
 #include "VKRenderer.h"
 
-static const uint32_t SHADOWMAP_DIM = 2048;
+const uint32_t ShadowMap::SHADOWMAP_DIM = 2048;
 
 ShadowMap::ShadowMap()
 {
@@ -13,7 +13,7 @@ ShadowMap::ShadowMap()
         VkAttachmentDescription attachmentDescription{};
         attachmentDescription.format = VK_FORMAT_D16_UNORM;
         attachmentDescription.samples = VK_SAMPLE_COUNT_1_BIT;
-        attachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        attachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         attachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -58,11 +58,6 @@ ShadowMap::ShadowMap()
 
         auto result = vkCreateRenderPass(VKRenderer::getInstance().getDevice(), &renderPassCreateInfo,
             nullptr, &mShadowRenderPass);
-        assert(result == VK_SUCCESS);
-
-        attachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        result = vkCreateRenderPass(VKRenderer::getInstance().getDevice(), &renderPassCreateInfo,
-            nullptr, &mShadowRenderPassClear);
         assert(result == VK_SUCCESS);
     }
 
@@ -110,7 +105,6 @@ ShadowMap::ShadowMap()
 ShadowMap::~ShadowMap()
 {
     vkDestroyRenderPass(VKRenderer::getInstance().getDevice(), mShadowRenderPass, nullptr);
-    vkDestroyRenderPass(VKRenderer::getInstance().getDevice(), mShadowRenderPassClear, nullptr);
     vkDestroyImageView(VKRenderer::getInstance().getDevice(), mShadowDepthImageView, nullptr);
     vkDestroyImage(VKRenderer::getInstance().getDevice(), mShadowDepthImage, nullptr);
     vkFreeMemory(VKRenderer::getInstance().getDevice(), mShadowDepthImageMemory, nullptr);
