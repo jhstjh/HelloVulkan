@@ -7,6 +7,7 @@
 #include "VKRenderer.h"
 #include "Model.h"
 #include "ShadowMap.h"
+#include "DebugCoord.h"
 
 #ifdef _ANDROID
 #include "engine.h"
@@ -44,6 +45,7 @@ public:
         mModels.clear();
 
         delete mShadowMap;
+        delete mDebugCoord;
 
         vkDestroySwapchainKHR(mDevice, mSwapchain, nullptr);
         vkDestroySemaphore(mDevice, mImageAvailableSemaphore, nullptr);
@@ -97,6 +99,7 @@ public:
         applicationInfo.applicationVersion = 1;
         applicationInfo.pEngineName = "StenGineVK";
         applicationInfo.engineVersion = 1;
+        applicationInfo.apiVersion = VK_API_VERSION_1_0;
 
         // instance layers and extensions
         uint32_t count = 0;
@@ -119,6 +122,39 @@ public:
         for (auto& extension : extensions)
         {
             extNames.push_back(extension.extensionName);
+        }
+
+        const char *instance_extensions[] = {
+#if _DEBUG
+            "VK_EXT_debug_report",
+#endif          
+            "VK_KHR_surface",
+            // Not supported by Nsight (as of 5.3.0.17215)
+            // "VK_EXT_display_surface_counter",
+            // "VK_KHR_get_surface_capabilities2",
+            // "VK_KHX_device_group_creation",
+            // "VK_NV_external_memory_capabilities",
+
+#if _ANDROID
+            "VK_KHR_android_surface",
+#else
+            "VK_KHR_get_physical_device_properties2",
+            "VK_KHR_win32_surface",
+#endif
+        };
+
+        uint32_t instance_extension_request_count =
+            sizeof(instance_extensions) / sizeof(instance_extensions[0]);
+        for (uint32_t i = 0; i < instance_extension_request_count; i++) {
+            bool found = false;
+            for (uint32_t j = 0; j < extensions.size(); j++) {
+                if (strcmp(instance_extensions[i], extNames[j]) == 0) {
+                    found = true;
+                }
+            }
+            if (!found) {
+                assert(0);
+            }
         }
 
         std::vector<const char*> layerNames;
@@ -174,8 +210,8 @@ public:
         VkInstanceCreateInfo instanceCreateInfo = { };
         instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         instanceCreateInfo.pApplicationInfo = &applicationInfo;
-        instanceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(extNames.size());
-        instanceCreateInfo.ppEnabledExtensionNames = extNames.data();
+        instanceCreateInfo.enabledExtensionCount = sizeof(instance_extensions) / sizeof(instance_extensions[0]);
+        instanceCreateInfo.ppEnabledExtensionNames = instance_extensions;
         instanceCreateInfo.enabledLayerCount = sizeof(instance_layers) / sizeof(instance_layers[0]);
         instanceCreateInfo.ppEnabledLayerNames = instance_layers;
 
@@ -549,6 +585,7 @@ public:
         }
 
         mShadowMap = new ShadowMap();
+        mDebugCoord = new DebugCoord();
 
         mModels.push_back(new Model("chalet", 0.f));
         mModels.push_back(new Model("cube", 2.f));
@@ -831,6 +868,7 @@ public:
         VkResult result = vkAcquireNextImageKHR(mDevice, mSwapchain, 0xFFFFFFFFFFFFFFFFull, mImageAvailableSemaphore, VK_NULL_HANDLE, &nextIndex);
         assert(result == VK_SUCCESS);
 
+        // draw shadowmap
         {
             VkCommandBufferBeginInfo cmdBufferBeginInfo{};
             cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -887,6 +925,7 @@ public:
             assert(result == VK_SUCCESS);
         }
 
+        // draw objects
         {
             VkCommandBufferBeginInfo cmdBufferBeginInfo{};
             cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -920,6 +959,7 @@ public:
                         model->executeCommandBuffer(mPrimaryCmdBuffer[nextIndex], nextIndex);
                     }
                 }
+                mDebugCoord->executeCommandBuffer(mPrimaryCmdBuffer[nextIndex], nextIndex);
                 vkCmdEndRenderPass(mPrimaryCmdBuffer[nextIndex]);
             }
             result = vkEndCommandBuffer(mPrimaryCmdBuffer[nextIndex]);
@@ -963,6 +1003,7 @@ public:
         {
             model->update();
         }
+        mDebugCoord->update();
     }
 
     ShadowMap* getShadowMap() final
@@ -1045,6 +1086,7 @@ public:
 
     std::vector<Model*> mModels;
     ShadowMap*          mShadowMap{ nullptr };
+    DebugCoord*         mDebugCoord{ nullptr };
 };
 
 }

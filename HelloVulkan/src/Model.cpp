@@ -941,7 +941,7 @@ void Model::update()
     ubo.proj = mat4::Ortho(l, r, b, t, n, f, 1.f);
     ubo.proj(1, 1) *= -1;
 
-    void* data;
+    void* data = nullptr;
     vkMapMemory(VKRenderer::getInstance().getDevice(), mShadowUniformStagingBufferMemory, 0, sizeof(ubo), 0, &data);
     assert(data);
     memcpy(data, &ubo, sizeof(ubo));

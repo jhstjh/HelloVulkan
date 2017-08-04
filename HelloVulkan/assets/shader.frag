@@ -21,8 +21,8 @@ void main() {
     float shadow = texture(texShadowSampler, shadowTrans.xy).r;
     shadow += epsilon;
     if (shadow  < shadowTrans.z) {
-    	shadowFactor = 0.1f;
+    	shadowFactor = 0.2f;
     }
 
-    outColor = shadowFactor * texture(texSampler, fragTexCoord) * max(0.f, dot(normalize(vec3(2.f, 2.f, -2.f)), worldNormal));
+    outColor = shadowFactor * texture(texSampler, fragTexCoord) * max(0.2f, dot(normalize(vec3(2.f, 2.f, -2.f)), worldNormal));
 }
