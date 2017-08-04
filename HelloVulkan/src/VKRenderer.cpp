@@ -20,10 +20,12 @@ namespace VK_RENDERER
 {
 class VKRendererImpl : public VKRenderer
 {
+#if _DEBUG
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugReportFlagsEXT /*flags*/, VkDebugReportObjectTypeEXT /*objType*/, uint64_t /*obj*/, size_t /*location*/, int32_t /*code*/, const char* /*layerPrefix*/, const char* msg, void* /*userData*/) {
         LOGW("validation layer: %s\n", msg);
         return VK_FALSE;
     }
+#endif
 
 public:
     VKRendererImpl()
@@ -65,6 +67,7 @@ public:
         vkDestroyCommandPool(mDevice, mCmdPool, nullptr);
         vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
         
+#if _DEBUG
 #ifdef _ANDROID
         PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT =
             reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>(
@@ -73,9 +76,9 @@ public:
         PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT = (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr(mInstance, "vkDestroyDebugReportCallbackEXT");
         assert(vkDestroyDebugReportCallbackEXT);
 #endif
-
         vkDestroyDebugReportCallbackEXT(mInstance, mDebugReportCallback, nullptr);
-        
+#endif
+
         vkDestroyDevice(mDevice, nullptr);
         vkDestroyInstance(mInstance, nullptr);
 
@@ -128,16 +131,20 @@ public:
         const char *instance_layers[] = {
 #ifdef _ANDROID
             "VK_LAYER_GOOGLE_threading",
+#if _DEBUG
             "VK_LAYER_LUNARG_parameter_validation",
-            "VK_LAYER_LUNARG_object_tracker",
             "VK_LAYER_LUNARG_core_validation",
+#endif
+            "VK_LAYER_LUNARG_object_tracker",
             "VK_LAYER_LUNARG_image",
             "VK_LAYER_LUNARG_swapchain",
             "VK_LAYER_GOOGLE_unique_objects"
 #else
+#if _DEBUG
             "VK_LAYER_LUNARG_core_validation",
             "VK_LAYER_LUNARG_parameter_validation",
             "VK_LAYER_LUNARG_standard_validation",
+#endif
             // "VK_LAYER_LUNARG_api_dump",
             "VK_LAYER_LUNARG_monitor",
             "VK_LAYER_LUNARG_object_tracker",
@@ -191,6 +198,7 @@ public:
 
         mPhysicalDevice = devices[0];
 
+#if _DEBUG
         // Setup debug callback
         VkDebugReportCallbackCreateInfoEXT debugReportCallbackCreateInfo = {};
         debugReportCallbackCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
@@ -208,6 +216,7 @@ public:
 
         result = vkCreateDebugReportCallbackEXT(mInstance, &debugReportCallbackCreateInfo, nullptr, &mDebugReportCallback);
         assert(result == VK_SUCCESS);
+#endif
 
         // physical device layers and extensions
         result = vkEnumerateDeviceLayerProperties(mPhysicalDevice, &count, nullptr);
@@ -373,7 +382,11 @@ public:
         swapchainCreateInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
         swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
         swapchainCreateInfo.clipped = VK_FALSE;
+#ifdef _ANDROID
+        swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+#else
         swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+#endif
 
         result = vkCreateSwapchainKHR(mDevice, &swapchainCreateInfo,
             nullptr, &mSwapchain);
