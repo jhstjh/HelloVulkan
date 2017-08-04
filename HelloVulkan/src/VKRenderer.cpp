@@ -88,7 +88,6 @@ public:
     void init(void* platform) final
     {
         loadVKLibs();
-        loadVKFuncs();
 
         VkResult result = VK_ERROR_INITIALIZATION_FAILED;
 
