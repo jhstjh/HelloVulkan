@@ -285,6 +285,9 @@ public:
             "VK_KHX_win32_keyed_mutex"
             "VK_KHX_subgroup"
             "VK_NV_sample_locations"
+            "VK_EXT_depth_range_unrestricted"
+            "VK_EXT_post_depth_coverage"
+            "VK_EXT_shader_viewport_index_layer"
             ;
 
         std::vector<const char*> deviceExtNames;
